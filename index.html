@@ -1173,8 +1173,10 @@
                 try {
                     const data = JSON.parse(event.target.result);
                     gridLayer.clearLayers();
+                    if (magGridLayer) magGridLayer.clearLayers();
                     for (const key in gridData) delete gridData[key];
                     for (const key in gridRectangles) delete gridRectangles[key];
+                    for (const key in magGridRectangles) delete magGridRectangles[key];
                     
                     if (data.defaultZone) {
                         defaultZone = data.defaultZone;
@@ -1190,6 +1192,7 @@
                             });
                         }
                     }
+                    updateZoneLabels();
                     alert("JSON 파일을 성공적으로 불러왔습니다.");
                     scheduleFirebaseSave(); 
                 } catch (err) { alert("잘못된 형식의 JSON 파일입니다."); }
