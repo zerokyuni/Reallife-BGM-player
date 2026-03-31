@@ -94,9 +94,9 @@
         </button>
     </div>
 
-    <!-- Magnifier for Mobile (모바일 돋보기) -->
+    <!-- DOM Clone Magnifier for Mobile (초고속 화면 복제 돋보기) -->
     <div id="magnifier" class="hidden fixed w-28 h-28 sm:w-32 sm:h-32 border-[3px] border-white rounded-full overflow-hidden z-[8000] pointer-events-none shadow-[0_10px_25px_rgba(0,0,0,0.5)] transform -translate-x-1/2 -translate-y-1/2">
-        <div id="mag-map" class="w-full h-full"></div>
+        <div id="mag-content" class="absolute top-0 left-0 w-screen h-screen origin-top-left pointer-events-none"></div>
         <!-- Crosshair overlay -->
         <div class="absolute inset-0 flex items-center justify-center z-[8001]">
             <div class="w-1 h-1 bg-red-500 rounded-full"></div>
@@ -316,13 +316,14 @@
         // ==========================================
         // 3. 상태 변수
         // ==========================================
-        const BASE_LAT = 35.8242; // 기준 위도
-        const LAT_GRID_SIZE = 0.0001; // 세로 길이
-        const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); // 가로 길이 보정
+        const BASE_LAT = 35.8242; 
+        const LAT_GRID_SIZE = 0.0001; 
+        const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); 
 
-        let currentMode = 'pan'; 
+        let currentMode = 'paint'; // 기본 모드를 'paint'로 변경
         let selectedZone = 'zone1';
         let isPainting = false;
+        let isPaintingTouch = false;
         
         const gridData = {}; 
         const gridRectangles = {}; 
@@ -405,10 +406,8 @@
                 
                 if (docSnap.exists()) {
                     gridLayer.clearLayers();
-                    if (magGridLayer) magGridLayer.clearLayers();
                     for (const key in gridData) delete gridData[key];
                     for (const key in gridRectangles) delete gridRectangles[key];
-                    for (const key in magGridRectangles) delete magGridRectangles[key];
 
                     const data = docSnap.data();
                     
@@ -463,35 +462,6 @@
         const brushPreviewLayer = L.featureGroup().addTo(map); 
         const zoneLabelsLayer = L.featureGroup().addTo(map);
 
-        // --- 모바일 돋보기(Magnifier) 설정 ---
-        let magMap, magGridLayer, magBrushPreviewLayer;
-        const magGridRectangles = {};
-        const magnifierEl = document.getElementById('magnifier');
-
-        function initMagnifier() {
-            magMap = L.map('mag-map', {
-                zoomControl: false, attributionControl: false, dragging: false,
-                touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false,
-                boxZoom: false, keyboard: false
-            }).setView([35.8242, 127.1480], 19);
-            
-            L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 21 }).addTo(magMap);
-            magGridLayer = L.featureGroup().addTo(magMap);
-            magBrushPreviewLayer = L.featureGroup().addTo(magMap);
-
-            magMap.on('zoomend', () => {
-                if (magMap.getZoom() < 16) {
-                    document.getElementById('mag-map').classList.add('hide-patterns');
-                } else {
-                    document.getElementById('mag-map').classList.remove('hide-patterns');
-                }
-            });
-        }
-        initMagnifier();
-
-        let isPaintingTouch = false;
-
-        // 팔레트 숨김/표시 제어 함수
         function updatePaletteVisibility() {
             const sidebar = document.getElementById('palette-sidebar');
             if (currentMode === 'pan' || currentMode === 'erase') {
@@ -508,21 +478,18 @@
             }
         }
 
-        // 지도 위 구역 이름 오버레이 업데이트 함수 (덩어리(Blob) 탐색 알고리즘 적용)
         function updateZoneLabels() {
             zoneLabelsLayer.clearLayers();
             
             const visited = new Set();
-            const blobs = []; // 분리된 덩어리들을 담을 배열
+            const blobs = []; 
 
-            // 8방향 탐색용 (상, 하, 좌, 우, 대각선)
             const dirs = [
                 [-1, -1], [-1, 0], [-1, 1],
                 [0, -1],           [0, 1],
                 [1, -1],  [1, 0],  [1, 1]
             ];
 
-            // 1. 이어져 있는 격자들을 하나의 덩어리로 묶는 탐색(BFS) 로직
             for (const key in gridData) {
                 if (visited.has(key)) continue;
 
@@ -541,13 +508,11 @@
                     const latIdx = parseInt(latStr);
                     const lngIdx = parseInt(lngStr);
 
-                    // 주변 8칸 검사
                     for (const [dLat, dLng] of dirs) {
                         const nLatIdx = latIdx + dLat;
                         const nLngIdx = lngIdx + dLng;
                         const nKey = `${nLatIdx}_${nLngIdx}`;
                         
-                        // 인접한 곳에 같은 구역(zoneId)이 칠해져 있으면 같은 덩어리로 취급
                         if (!visited.has(nKey) && gridData[nKey] === zoneId) {
                             visited.add(nKey);
                             queue.push(nKey);
@@ -557,7 +522,6 @@
                 blobs.push({ zoneId, keys: blob });
             }
 
-            // 2. 분리된 각 덩어리(Blob)마다 개별적으로 중심점을 찾아 라벨 생성
             for (const blob of blobs) {
                 const zoneId = blob.zoneId;
                 let sumLat = 0, sumLng = 0;
@@ -574,7 +538,7 @@
                 const icon = L.divIcon({
                     className: 'zone-label-icon',
                     html: `<div class="zone-label-text" style="color: ${ZONES[zoneId].color}; border-color: ${ZONES[zoneId].color}88;">${ZONES[zoneId].name}</div>`,
-                    iconSize: [0, 0] // 아이콘 크기를 0으로 만들어 텍스트 크기에 온전히 맞추도록 설정
+                    iconSize: [0, 0] 
                 });
 
                 L.marker([avgLat, avgLng], { icon: icon, interactive: false }).addTo(zoneLabelsLayer);
@@ -750,10 +714,6 @@
                         gridLayer.removeLayer(gridRectangles[key]);
                         delete gridRectangles[key];
                     }
-                    if (magGridRectangles[key]) {
-                        magGridLayer.removeLayer(magGridRectangles[key]);
-                        delete magGridRectangles[key];
-                    }
                 }
             }
             
@@ -881,6 +841,8 @@
         // ==========================================
         // 5. 그리드 페인팅 핵심 로직
         // ==========================================
+        let needsMagClone = false;
+
         function getGridCoords(lat, lng) {
             return {
                 latIdx: Math.floor(lat / LAT_GRID_SIZE),
@@ -921,10 +883,7 @@
                                 gridLayer.removeLayer(gridRectangles[key]);
                                 delete gridRectangles[key];
                             }
-                            if (magGridRectangles[key]) {
-                                magGridLayer.removeLayer(magGridRectangles[key]);
-                                delete magGridRectangles[key];
-                            }
+                            needsMagClone = true;
                             scheduleFirebaseSave(); 
                         }
                     }
@@ -951,27 +910,15 @@
             
             group.addTo(gridLayer);
             gridRectangles[key] = group;
-
-            if (magGridLayer) {
-                const magGroup = L.layerGroup();
-                L.rectangle(bounds, { fillColor: zone.color, fillOpacity: 0.7, color: 'transparent', weight: 0, interactive: false }).addTo(magGroup);
-                const magPatternRect = L.rectangle(bounds, { fillColor: 'transparent', fillOpacity: 1, color: 'transparent', weight: 0, interactive: false, className: 'zone-pattern-layer' });
-                if (zone.pattern && zone.pattern !== 'none') {
-                    magPatternRect.on('add', function() { if (this._path) this._path.setAttribute('fill', zone.pattern); });
-                }
-                magPatternRect.addTo(magGroup);
-                magGroup.addTo(magGridLayer);
-                magGridRectangles[key] = magGroup;
-            }
+            
+            needsMagClone = true; // 화면이 변했으므로 돋보기 클론 업데이트 요청
         }
 
         function updatePatternVisibility() {
             if (map.getZoom() < 16) {
                 document.getElementById('map').classList.add('hide-patterns');
-                if (magMap) document.getElementById('mag-map').classList.add('hide-patterns');
             } else {
                 document.getElementById('map').classList.remove('hide-patterns');
-                if (magMap) document.getElementById('mag-map').classList.remove('hide-patterns');
             }
         }
         map.on('zoomend', updatePatternVisibility);
@@ -979,7 +926,6 @@
 
         function updateBrushPreview(latlng) {
             brushPreviewLayer.clearLayers();
-            if (magBrushPreviewLayer) magBrushPreviewLayer.clearLayers();
             if (currentMode === 'pan' || !latlng) return;
 
             const { latIdx, lngIdx } = getGridCoords(latlng.lat, latlng.lng);
@@ -998,17 +944,110 @@
                 fillOpacity: 0.1, interactive: false
             }).addTo(brushPreviewLayer);
 
-            if (magBrushPreviewLayer) {
-                L.rectangle([[minLat, minLng], [maxLat, maxLng]], {
-                    color: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
-                    weight: 2, dashArray: '4, 4',
-                    fillColor: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
-                    fillOpacity: 0.1, interactive: false
-                }).addTo(magBrushPreviewLayer);
-            }
+            needsMagClone = true; // 브러쉬 프리뷰가 변했으므로 클론 업데이트 요청
         }
 
-        // --- 마우스 이벤트 (데스크탑) ---
+        // ==========================================
+        // 스마트 터치 이벤트 (모바일) 및 돋보기(DOM Clone) 제어
+        // ==========================================
+        let activeTouches = 0;
+        const mapContainer = document.getElementById('map');
+        const magnifierEl = document.getElementById('magnifier');
+        const magContent = document.getElementById('mag-content');
+        
+        // 1. UI 영역 핀치 줌 완벽 차단
+        const preventUIPinchZoom = (e) => {
+            if (e.touches && e.touches.length >= 2) {
+                if (!e.target.closest('#map')) {
+                    e.preventDefault(); 
+                }
+            }
+        };
+        document.addEventListener('touchstart', preventUIPinchZoom, { passive: false });
+        document.addEventListener('touchmove', preventUIPinchZoom, { passive: false });
+
+        // 2. 모바일 돋보기 초고속 렌더링 헬퍼 (CSS Transform & DOM Clone)
+        function updateMagnifierRaw(clientX, clientY) {
+            magnifierEl.classList.remove('hidden');
+            
+            // 화면에 반영된 변경사항을 돋보기에 복제
+            if (needsMagClone) {
+                const clone = mapContainer.cloneNode(true);
+                clone.id = '';
+                clone.style.position = 'absolute';
+                clone.style.top = '0';
+                clone.style.left = '0';
+                clone.style.width = '100vw';
+                clone.style.height = '100vh';
+                clone.style.pointerEvents = 'none'; // 클론 터치 방지
+                magContent.replaceChildren(clone);
+                needsMagClone = false;
+            }
+
+            // 돋보기 박스 위치 업데이트
+            magnifierEl.style.left = clientX + 'px';
+            magnifierEl.style.top = (clientY - 100) + 'px';
+            
+            // 확대 배율 및 줌 오프셋 계산
+            const scale = 2;
+            const magRadius = magnifierEl.offsetWidth / 2;
+            const tx = magRadius - clientX * scale;
+            const ty = magRadius - clientY * scale;
+            
+            magContent.style.transformOrigin = '0 0';
+            magContent.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+        }
+
+        // 3. 지도 터치 컨트롤
+        mapContainer.addEventListener('touchstart', (e) => {
+            activeTouches = e.touches.length;
+            if (activeTouches === 1 && currentMode !== 'pan') {
+                isPaintingTouch = true;
+                updatePaletteVisibility();
+                
+                const touch = e.touches[0];
+                const latlng = map.mouseEventToLatLng(touch);
+                
+                needsMagClone = true; // 최초 터치 시 무조건 클론 생성
+                handleDraw(latlng);
+                updateMagnifierRaw(touch.clientX, touch.clientY);
+            } else if (activeTouches >= 2) {
+                isPaintingTouch = false;
+                magnifierEl.classList.add('hidden');
+                if (currentMode !== 'pan') map.dragging.enable(); // 색칠 중 두 손가락 대면 Pan/Zoom 허용
+            }
+        }, { passive: false });
+
+        mapContainer.addEventListener('touchmove', (e) => {
+            if (activeTouches === 1 && isPaintingTouch && currentMode !== 'pan') {
+                e.preventDefault(); // 스크롤/스와이프 방지 (필수)
+                const touch = e.touches[0];
+                const latlng = map.mouseEventToLatLng(touch);
+                
+                updateBrushPreview(latlng);
+                handleDraw(latlng);
+                updateMagnifierRaw(touch.clientX, touch.clientY);
+            }
+        }, { passive: false });
+
+        mapContainer.addEventListener('touchend', (e) => {
+            activeTouches = e.touches.length;
+            if (activeTouches === 0) {
+                if (isPaintingTouch) {
+                    isPaintingTouch = false;
+                    updatePaletteVisibility();
+                    updateZoneLabels();
+                }
+                magnifierEl.classList.add('hidden');
+                magContent.innerHTML = ''; // 돋보기 닫힐 때 클론 제거 (메모리 확보)
+                needsMagClone = true; 
+            }
+            if (activeTouches < 2 && currentMode !== 'pan') {
+                map.dragging.disable(); // 다시 색칠 모드 락 복귀
+            }
+        }, { passive: false });
+
+        // --- 마우스 이벤트 (데스크탑 지원) ---
         map.on('mousedown', (e) => {
             if (e.originalEvent.button === 1 || activeTouches > 0) return; 
             if (currentMode === 'pan') return;
@@ -1040,10 +1079,9 @@
             brushPreviewLayer.clearLayers(); 
         });
 
-        // Wheel Click Pan logic
+        // Wheel Click Pan logic (데스크탑 휠버튼 드래그)
         let isMiddleClickPanning = false;
         let lastMousePos = null;
-        const mapContainer = document.getElementById('map');
 
         mapContainer.addEventListener('mousedown', (e) => {
             if (e.button === 1) { 
@@ -1069,77 +1107,6 @@
                 mapContainer.style.cursor = currentMode === 'pan' ? 'grab' : (currentMode === 'erase' ? 'cell' : 'crosshair');
             }
         });
-
-        // ==========================================
-        // 스마트 터치 이벤트 (모바일)
-        // ==========================================
-        let activeTouches = 0;
-        
-        // 1. UI 영역 핀치 줌 완벽 차단
-        const preventUIPinchZoom = (e) => {
-            if (e.touches && e.touches.length >= 2) {
-                if (!e.target.closest('#map')) {
-                    e.preventDefault(); 
-                }
-            }
-        };
-        document.addEventListener('touchstart', preventUIPinchZoom, { passive: false });
-        document.addEventListener('touchmove', preventUIPinchZoom, { passive: false });
-
-        // 2. 모바일 돋보기 렌더링 헬퍼
-        function updateMagnifierRaw(clientX, clientY, latlng) {
-            magnifierEl.classList.remove('hidden');
-            magnifierEl.style.left = clientX + 'px';
-            magnifierEl.style.top = (clientY - 100) + 'px';
-            magMap.setView(latlng, map.getZoom() + 1, {animate: false});
-        }
-
-        // 3. 지도 터치 컨트롤
-        mapContainer.addEventListener('touchstart', (e) => {
-            activeTouches = e.touches.length;
-            if (activeTouches === 1 && currentMode !== 'pan') {
-                isPaintingTouch = true;
-                updatePaletteVisibility();
-                
-                const touch = e.touches[0];
-                const latlng = map.mouseEventToLatLng(touch);
-                
-                handleDraw(latlng);
-                updateMagnifierRaw(touch.clientX, touch.clientY, latlng);
-            } else if (activeTouches >= 2) {
-                isPaintingTouch = false;
-                magnifierEl.classList.add('hidden');
-                if (currentMode !== 'pan') map.dragging.enable(); // 색칠 중 두 손가락 대면 Pan/Zoom 허용
-            }
-        }, { passive: false });
-
-        mapContainer.addEventListener('touchmove', (e) => {
-            if (activeTouches === 1 && isPaintingTouch && currentMode !== 'pan') {
-                e.preventDefault(); // 스크롤/스와이프 방지
-                const touch = e.touches[0];
-                const latlng = map.mouseEventToLatLng(touch);
-                
-                updateBrushPreview(latlng);
-                handleDraw(latlng);
-                updateMagnifierRaw(touch.clientX, touch.clientY, latlng);
-            }
-        }, { passive: false });
-
-        mapContainer.addEventListener('touchend', (e) => {
-            activeTouches = e.touches.length;
-            if (activeTouches === 0) {
-                if (isPaintingTouch) {
-                    isPaintingTouch = false;
-                    updatePaletteVisibility();
-                    updateZoneLabels();
-                }
-                magnifierEl.classList.add('hidden');
-                if (magBrushPreviewLayer) magBrushPreviewLayer.clearLayers();
-            }
-            if (activeTouches < 2 && currentMode !== 'pan') {
-                map.dragging.disable(); // 다시 색칠 모드 락 복귀
-            }
-        }, { passive: false });
 
         // ==========================================
         // 6. 도구 모드 설정 및 UI 제어
@@ -1308,25 +1275,16 @@
         btnStartApp.addEventListener('click', () => {
             isAudioAllowed = true;
             
-            // 브라우저 자동재생 정책 우회를 위한 플레이어 초기화
             if(ytPlayer1 && ytPlayer1.playVideo) {
-                ytPlayer1.setVolume(0); 
-                ytPlayer1.playVideo(); 
-                ytPlayer1.pauseVideo();
+                ytPlayer1.setVolume(0); ytPlayer1.playVideo(); ytPlayer1.pauseVideo();
             }
             if(ytPlayer2 && ytPlayer2.playVideo) {
-                ytPlayer2.setVolume(0); 
-                ytPlayer2.playVideo(); 
-                ytPlayer2.pauseVideo();
+                ytPlayer2.setVolume(0); ytPlayer2.playVideo(); ytPlayer2.pauseVideo();
             }
 
-            // 오버레이 부드럽게 페이드 아웃 처리
             startOverlay.style.opacity = '0';
-            setTimeout(() => {
-                startOverlay.classList.add('hidden');
-            }, 1000);
+            setTimeout(() => { startOverlay.classList.add('hidden'); }, 1000);
 
-            // 사용자가 [시작하기]를 누르기 전에 이미 GPS가 잡혀서 구역이 판별되었다면 바로 음악 페이드인
             if (currentPlayingZone) {
                 playZoneAudio(currentPlayingZone);
             }
@@ -1344,7 +1302,6 @@
         function checkLocationZone(lat, lng) {
             const { latIdx, lngIdx } = getGridCoords(lat, lng);
             const key = `${latIdx}_${lngIdx}`;
-            
             const targetZone = gridData[key] || 'default';
 
             if (currentPlayingZone !== targetZone) {
@@ -1369,13 +1326,12 @@
                 await signInWithPopup(auth, provider);
             } catch (error) {
                 console.error("로그인 실패 원인:", error);
-                
                 if (error.code === 'auth/unauthorized-domain') {
-                    alert(`로그인 실패: 승인되지 않은 도메인입니다.\nFirebase 콘솔의 [Authentication] -> [설정] -> [승인된 도메인]에 현재 사이트 주소를 추가해주세요.`);
+                    alert(`로그인 실패: 승인되지 않은 도메인입니다.\nFirebase 콘솔의 [Authentication] -> [설정] -> [승인된 도메인]에 추가해주세요.`);
                 } else if (error.code === 'auth/popup-closed-by-user') {
-                    alert("로그인 창이 닫혔습니다. 팝업 차단이 되어있을 수 있습니다.\n* 현재 미리보기 화면에서는 보안상 로그인이 안 될 수 있습니다. 새 탭이나 Github 배포 링크에서 테스트해주세요.");
+                    alert("로그인 창이 닫혔습니다. 팝업 차단이 되어있을 수 있습니다.");
                 } else {
-                    alert(`로그인 실패: ${error.message}\n(현재 미리보기 화면에서 팝업이 차단되었을 수 있습니다)`);
+                    alert(`로그인 실패: ${error.message}`);
                 }
             }
         };
@@ -1437,10 +1393,8 @@
                 try {
                     const data = JSON.parse(event.target.result);
                     gridLayer.clearLayers();
-                    if (magGridLayer) magGridLayer.clearLayers();
                     for (const key in gridData) delete gridData[key];
                     for (const key in gridRectangles) delete gridRectangles[key];
-                    for (const key in magGridRectangles) delete magGridRectangles[key];
                     
                     if (data.defaultZone) {
                         defaultZone = data.defaultZone;
@@ -1466,7 +1420,7 @@
         };
         document.getElementById('btn-load').onclick = () => fileInput.click();
 
-        setMode('pan');
+        setMode('paint'); // 초기 시작 시 paint 모드 적용
 
     </script>
 </body>
