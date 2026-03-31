@@ -251,7 +251,10 @@
         // ==========================================
         // 3. 상태 변수
         // ==========================================
-        const GRID_SIZE = 0.0001; // 약 11미터
+        const BASE_LAT = 35.8242; // 기준 위도 (대한민국 전주)
+        const LAT_GRID_SIZE = 0.0001; // 세로 길이 (위도 0.0001도 = 약 11.1m)
+        const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); // 가로 길이 보정 (경도)
+
         let currentMode = 'pan'; 
         let selectedZone = 'zone1';
         let isPainting = false;
@@ -688,15 +691,15 @@
         // ==========================================
         function getGridCoords(lat, lng) {
             return {
-                latIdx: Math.floor(lat / GRID_SIZE),
-                lngIdx: Math.floor(lng / GRID_SIZE)
+                latIdx: Math.floor(lat / LAT_GRID_SIZE),
+                lngIdx: Math.floor(lng / LNG_GRID_SIZE)
             };
         }
 
         function getBounds(latIdx, lngIdx) {
             return [
-                [latIdx * GRID_SIZE, lngIdx * GRID_SIZE],
-                [(latIdx + 1) * GRID_SIZE, (lngIdx + 1) * GRID_SIZE]
+                [latIdx * LAT_GRID_SIZE, lngIdx * LNG_GRID_SIZE],
+                [(latIdx + 1) * LAT_GRID_SIZE, (lngIdx + 1) * LNG_GRID_SIZE]
             ];
         }
 
@@ -760,10 +763,10 @@
             const brushSize = parseInt(document.getElementById('brush-size').value, 10);
             const offset = brushSize - 1;
 
-            const minLat = (latIdx - offset) * GRID_SIZE;
-            const minLng = (lngIdx - offset) * GRID_SIZE;
-            const maxLat = (latIdx + offset + 1) * GRID_SIZE;
-            const maxLng = (lngIdx + offset + 1) * GRID_SIZE;
+            const minLat = (latIdx - offset) * LAT_GRID_SIZE;
+            const minLng = (lngIdx - offset) * LNG_GRID_SIZE;
+            const maxLat = (latIdx + offset + 1) * LAT_GRID_SIZE;
+            const maxLng = (lngIdx + offset + 1) * LNG_GRID_SIZE;
 
             L.rectangle([[minLat, minLng], [maxLat, maxLng]], {
                 color: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
