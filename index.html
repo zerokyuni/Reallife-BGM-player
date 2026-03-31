@@ -16,7 +16,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        body, html { 
+            margin: 0; padding: 0; height: 100%; overflow: hidden; 
+            touch-action: none; /* 브라우저 자체의 줌, 더블탭 확대, 스와이프를 원천 차단 */
+        }
         #map { width: 100%; height: 100%; z-index: 1; }
         
         /* UI Floating Panels */
@@ -25,7 +28,6 @@
             position: absolute;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             backdrop-filter: blur(8px);
-            touch-action: none; /* UI 핀치 줌 방지 */
         }
 
         /* Tool active states */
@@ -48,6 +50,7 @@
 
         #palette-container {
             touch-action: pan-y; /* 팔레트 목록은 세로 스크롤 허용 */
+            overscroll-behavior: contain; /* 끝까지 스크롤 시 화면 전체가 끌려가는 현상 방지 */
         }
 
         /* 줌 아웃 시 패턴 숨김 처리용 클래스 */
@@ -129,26 +132,26 @@
     <!-- Top Toolbar -->
     <div class="floating-ui top-2 sm:top-4 left-1/2 transform -translate-x-1/2 bg-white/95 rounded-2xl sm:rounded-full p-2 sm:px-4 sm:py-2 flex flex-wrap items-center justify-center gap-2 sm:space-x-2 border border-gray-200 w-[96%] sm:w-auto max-w-4xl">
         <div class="flex space-x-1 sm:space-x-2">
-            <button id="btn-pan" class="tool-btn active w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="이동 (Pan)">
-                <i class="fa-solid fa-hand"></i>
-            </button>
-            <button id="btn-paint" class="tool-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="그리기 (Paint)">
+            <button id="btn-paint" class="tool-btn active w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="그리기 (Paint)">
                 <i class="fa-solid fa-paintbrush"></i>
             </button>
             <button id="btn-erase" class="tool-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="지우개 (Eraser)">
                 <i class="fa-solid fa-eraser"></i>
             </button>
+            <button id="btn-pan" class="tool-btn w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="이동 (Pan)">
+                <i class="fa-solid fa-hand"></i>
+            </button>
         </div>
         
         <div class="w-px h-6 bg-gray-300 hidden sm:block"></div>
         
-        <div id="brush-size-container" class="flex items-center space-x-1 sm:space-x-2 px-2 bg-gray-50 rounded-lg py-1 border border-gray-100 hidden" title="브러쉬 사이즈">
+        <div id="brush-size-container" class="flex items-center space-x-1 sm:space-x-2 px-2 bg-gray-50 rounded-lg py-1 border border-gray-100" title="브러쉬 사이즈">
             <i class="fa-solid fa-circle text-gray-400 text-[6px] sm:text-[8px]"></i>
             <input type="range" id="brush-size" min="1" max="10" value="1" class="w-16 sm:w-20 accent-blue-500 cursor-pointer">
             <i class="fa-solid fa-circle text-gray-400 text-sm sm:text-lg"></i>
         </div>
 
-        <div id="brush-size-divider" class="w-px h-6 bg-gray-300 hidden"></div>
+        <div id="brush-size-divider" class="w-px h-6 bg-gray-300 hidden sm:block"></div>
         
         <div class="flex space-x-1 sm:space-x-2">
             <button id="btn-save" class="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium text-green-700 hover:bg-green-50 transition flex items-center" title="JSON 다운로드">
@@ -165,7 +168,7 @@
     </div>
 
     <!-- Palette Sidebar -->
-    <div id="palette-sidebar" class="floating-ui top-24 sm:top-20 left-2 sm:left-4 bg-white/95 rounded-xl p-3 sm:p-4 border border-gray-200 w-48 sm:w-64 max-h-[50vh] sm:max-h-[70vh] flex flex-col transition-all duration-300 origin-top-left opacity-0 pointer-events-none scale-95">
+    <div id="palette-sidebar" class="floating-ui top-24 sm:top-20 left-2 sm:left-4 bg-white/95 rounded-xl p-3 sm:p-4 border border-gray-200 w-48 sm:w-64 max-h-[50vh] sm:max-h-[70vh] flex flex-col transition-all duration-300 origin-top-left opacity-100 scale-100">
         <h3 class="font-bold text-gray-800 mb-2 sm:mb-3 text-xs sm:text-sm flex-shrink-0">음악 구역 설정</h3>
         
         <!-- 이탈 구역 (기본 배경음악) -->
@@ -196,7 +199,7 @@
 
     <!-- Add Zone Modal -->
     <div id="add-zone-modal" class="hidden fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center px-4">
-        <div class="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl">
+        <div class="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto custom-scroll" style="touch-action: pan-y; overscroll-behavior: contain;">
             <h2 id="modal-title" class="text-base sm:text-lg font-bold mb-4 text-gray-800">새 음악 구역 만들기</h2>
             <div class="space-y-3">
                 <div id="modal-zone-styles" class="space-y-3">
@@ -320,7 +323,7 @@
         const LAT_GRID_SIZE = 0.0001; 
         const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); 
 
-        let currentMode = 'paint'; // 기본 모드를 'paint'로 변경
+        let currentMode = 'paint'; 
         let selectedZone = 'zone1';
         let isPainting = false;
         let isPaintingTouch = false;
@@ -955,12 +958,10 @@
         const magnifierEl = document.getElementById('magnifier');
         const magContent = document.getElementById('mag-content');
         
-        // 1. UI 영역 핀치 줌 완벽 차단
+        // 1. 브라우저 전체 핀치 줌 완벽 차단 (Leaflet 자체 줌은 정상 작동함)
         const preventUIPinchZoom = (e) => {
             if (e.touches && e.touches.length >= 2) {
-                if (!e.target.closest('#map')) {
-                    e.preventDefault(); 
-                }
+                e.preventDefault(); 
             }
         };
         document.addEventListener('touchstart', preventUIPinchZoom, { passive: false });
