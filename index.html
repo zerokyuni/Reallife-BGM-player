@@ -25,6 +25,7 @@
             position: absolute;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             backdrop-filter: blur(8px);
+            touch-action: none; /* UI 핀치 줌 방지 */
         }
 
         /* Tool active states */
@@ -45,9 +46,37 @@
         .custom-scroll::-webkit-scrollbar-track { background: transparent; }
         .custom-scroll::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 10px; }
 
+        #palette-container {
+            touch-action: pan-y; /* 팔레트 목록은 세로 스크롤 허용 */
+        }
+
         /* 줌 아웃 시 패턴 숨김 처리용 클래스 */
         .hide-patterns .zone-pattern-layer {
             display: none !important;
+        }
+
+        /* 음악 구역 라벨 (오버레이) */
+        .zone-label-icon {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            overflow: visible !important; /* 라벨이 잘리지 않게 설정 */
+        }
+        .zone-label-text {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 4px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 800;
+            white-space: nowrap;
+            width: max-content; /* 글자 길이에 맞춰 배경이 꽉 차게 늘어남 */
+            display: inline-block; /* 배경 박스 크기를 온전히 렌더링하도록 강제 */
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 2px solid;
+            transition: all 0.2s;
         }
     </style>
 </head>
@@ -63,6 +92,17 @@
         <button id="btn-start-app" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold text-lg shadow-[0_0_20px_rgba(59,130,246,0.5)] transition-all hover:scale-105 active:scale-95 flex items-center">
             <i class="fa-solid fa-play mr-2"></i> 시작하기
         </button>
+    </div>
+
+    <!-- Magnifier for Mobile (모바일 돋보기) -->
+    <div id="magnifier" class="hidden fixed w-28 h-28 sm:w-32 sm:h-32 border-[3px] border-white rounded-full overflow-hidden z-[8000] pointer-events-none shadow-[0_10px_25px_rgba(0,0,0,0.5)] transform -translate-x-1/2 -translate-y-1/2">
+        <div id="mag-map" class="w-full h-full"></div>
+        <!-- Crosshair overlay -->
+        <div class="absolute inset-0 flex items-center justify-center z-[8001]">
+            <div class="w-1 h-1 bg-red-500 rounded-full"></div>
+            <div class="w-full h-px bg-red-500/30 absolute"></div>
+            <div class="h-full w-px bg-red-500/30 absolute"></div>
+        </div>
     </div>
 
     <!-- SVG Patterns for Grid Visualization -->
@@ -86,10 +126,8 @@
         <div id="yt-player-2"></div>
     </div>
 
-    <!-- Top Toolbar (모바일 반응형 개선) -->
+    <!-- Top Toolbar -->
     <div class="floating-ui top-2 sm:top-4 left-1/2 transform -translate-x-1/2 bg-white/95 rounded-2xl sm:rounded-full p-2 sm:px-4 sm:py-2 flex flex-wrap items-center justify-center gap-2 sm:space-x-2 border border-gray-200 w-[96%] sm:w-auto max-w-4xl">
-        
-        <!-- Tools (Pan, Paint, Erase) -->
         <div class="flex space-x-1 sm:space-x-2">
             <button id="btn-pan" class="tool-btn active w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="이동 (Pan)">
                 <i class="fa-solid fa-hand"></i>
@@ -104,16 +142,14 @@
         
         <div class="w-px h-6 bg-gray-300 hidden sm:block"></div>
         
-        <!-- 브러쉬 사이즈 조절 (Pan 모드에선 숨김 처리) -->
-        <div id="brush-size-container" class="flex items-center space-x-1 sm:space-x-2 px-2 bg-gray-50 rounded-lg py-1 border border-gray-100" title="브러쉬 사이즈">
+        <div id="brush-size-container" class="flex items-center space-x-1 sm:space-x-2 px-2 bg-gray-50 rounded-lg py-1 border border-gray-100 hidden" title="브러쉬 사이즈">
             <i class="fa-solid fa-circle text-gray-400 text-[6px] sm:text-[8px]"></i>
             <input type="range" id="brush-size" min="1" max="10" value="1" class="w-16 sm:w-20 accent-blue-500 cursor-pointer">
             <i class="fa-solid fa-circle text-gray-400 text-sm sm:text-lg"></i>
         </div>
 
-        <div id="brush-size-divider" class="w-px h-6 bg-gray-300 hidden sm:block"></div>
+        <div id="brush-size-divider" class="w-px h-6 bg-gray-300 hidden"></div>
         
-        <!-- Actions (Save, Load, Login) -->
         <div class="flex space-x-1 sm:space-x-2">
             <button id="btn-save" class="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-medium text-green-700 hover:bg-green-50 transition flex items-center" title="JSON 다운로드">
                 <i class="fa-solid fa-file-export sm:mr-1"></i> <span class="hidden sm:inline">파일 저장</span>
@@ -129,7 +165,7 @@
     </div>
 
     <!-- Palette Sidebar -->
-    <div class="floating-ui top-24 sm:top-20 left-2 sm:left-4 bg-white/95 rounded-xl p-3 sm:p-4 border border-gray-200 w-48 sm:w-64 max-h-[50vh] sm:max-h-[70vh] flex flex-col transition-all">
+    <div id="palette-sidebar" class="floating-ui top-24 sm:top-20 left-2 sm:left-4 bg-white/95 rounded-xl p-3 sm:p-4 border border-gray-200 w-48 sm:w-64 max-h-[50vh] sm:max-h-[70vh] flex flex-col transition-all duration-300 origin-top-left opacity-0 pointer-events-none scale-95">
         <h3 class="font-bold text-gray-800 mb-2 sm:mb-3 text-xs sm:text-sm flex-shrink-0">음악 구역 설정</h3>
         
         <!-- 이탈 구역 (기본 배경음악) -->
@@ -159,7 +195,7 @@
     </div>
 
     <!-- Add Zone Modal -->
-    <div id="add-zone-modal" class="hidden fixed inset-0 bg-black/60 z-[2000] flex items-center justify-center px-4">
+    <div id="add-zone-modal" class="hidden fixed inset-0 bg-black/60 z-[3000] flex items-center justify-center px-4">
         <div class="bg-white rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl">
             <h2 id="modal-title" class="text-base sm:text-lg font-bold mb-4 text-gray-800">새 음악 구역 만들기</h2>
             <div class="space-y-3">
@@ -171,10 +207,7 @@
                     <div>
                         <label class="block text-xs font-semibold text-gray-600 mb-1">구역 색상</label>
                         <div class="flex items-center space-x-3">
-                            <!-- 사용자 지정 색상 선택기 -->
                             <input type="color" id="new-zone-color" class="w-10 h-10 border rounded-lg cursor-pointer bg-gray-50 flex-shrink-0" value="#10b981" title="사용자 지정 색상">
-                            
-                            <!-- 기본 색상 프리셋 (그림판 스타일) -->
                             <div class="flex flex-wrap gap-1.5 flex-grow">
                                 <button type="button" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full shadow-sm border border-gray-200 color-swatch transition-transform hover:scale-110" style="background-color: #ef4444;" data-color="#ef4444" title="빨강"></button>
                                 <button type="button" class="w-5 h-5 sm:w-6 sm:h-6 rounded-full shadow-sm border border-gray-200 color-swatch transition-transform hover:scale-110" style="background-color: #f97316;" data-color="#f97316" title="주황"></button>
@@ -283,9 +316,9 @@
         // ==========================================
         // 3. 상태 변수
         // ==========================================
-        const BASE_LAT = 35.8242; // 기준 위도 (대한민국 전주)
-        const LAT_GRID_SIZE = 0.0001; // 세로 길이 (위도 0.0001도 = 약 11.1m)
-        const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); // 가로 길이 보정 (경도)
+        const BASE_LAT = 35.8242; // 기준 위도
+        const LAT_GRID_SIZE = 0.0001; // 세로 길이
+        const LNG_GRID_SIZE = LAT_GRID_SIZE / Math.cos(BASE_LAT * Math.PI / 180); // 가로 길이 보정
 
         let currentMode = 'pan'; 
         let selectedZone = 'zone1';
@@ -343,7 +376,7 @@
                 try {
                     const docRef = doc(db, 'users', currentUser.uid, 'bgm_zones', 'data');
                     await setDoc(docRef, { 
-                        defaultZone: defaultZone, // 이탈 구역 데이터 추가
+                        defaultZone: defaultZone, 
                         zonesDef: cleanZonesDef,
                         zones: compressedData,
                         updatedAt: new Date().toISOString()
@@ -372,8 +405,10 @@
                 
                 if (docSnap.exists()) {
                     gridLayer.clearLayers();
+                    if (magGridLayer) magGridLayer.clearLayers();
                     for (const key in gridData) delete gridData[key];
                     for (const key in gridRectangles) delete gridRectangles[key];
+                    for (const key in magGridRectangles) delete magGridRectangles[key];
 
                     const data = docSnap.data();
                     
@@ -396,6 +431,7 @@
                             });
                         }
                     }
+                    updateZoneLabels();
                     syncStatus.textContent = '동기화 완료';
                     syncStatus.className = 'text-[10px] sm:text-xs text-green-400 font-medium';
                     setTimeout(() => { syncStatus.textContent = ''; }, 3000);
@@ -425,6 +461,125 @@
 
         const gridLayer = L.featureGroup().addTo(map);
         const brushPreviewLayer = L.featureGroup().addTo(map); 
+        const zoneLabelsLayer = L.featureGroup().addTo(map);
+
+        // --- 모바일 돋보기(Magnifier) 설정 ---
+        let magMap, magGridLayer, magBrushPreviewLayer;
+        const magGridRectangles = {};
+        const magnifierEl = document.getElementById('magnifier');
+
+        function initMagnifier() {
+            magMap = L.map('mag-map', {
+                zoomControl: false, attributionControl: false, dragging: false,
+                touchZoom: false, scrollWheelZoom: false, doubleClickZoom: false,
+                boxZoom: false, keyboard: false
+            }).setView([35.8242, 127.1480], 19);
+            
+            L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', { maxZoom: 21 }).addTo(magMap);
+            magGridLayer = L.featureGroup().addTo(magMap);
+            magBrushPreviewLayer = L.featureGroup().addTo(magMap);
+
+            magMap.on('zoomend', () => {
+                if (magMap.getZoom() < 16) {
+                    document.getElementById('mag-map').classList.add('hide-patterns');
+                } else {
+                    document.getElementById('mag-map').classList.remove('hide-patterns');
+                }
+            });
+        }
+        initMagnifier();
+
+        let isPaintingTouch = false;
+
+        // 팔레트 숨김/표시 제어 함수
+        function updatePaletteVisibility() {
+            const sidebar = document.getElementById('palette-sidebar');
+            if (currentMode === 'pan' || currentMode === 'erase') {
+                sidebar.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+                sidebar.classList.remove('opacity-100', 'scale-100');
+            } else if (currentMode === 'paint') {
+                if (isPainting || isPaintingTouch) {
+                    sidebar.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
+                    sidebar.classList.remove('opacity-100', 'scale-100');
+                } else {
+                    sidebar.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
+                    sidebar.classList.add('opacity-100', 'scale-100');
+                }
+            }
+        }
+
+        // 지도 위 구역 이름 오버레이 업데이트 함수 (덩어리(Blob) 탐색 알고리즘 적용)
+        function updateZoneLabels() {
+            zoneLabelsLayer.clearLayers();
+            
+            const visited = new Set();
+            const blobs = []; // 분리된 덩어리들을 담을 배열
+
+            // 8방향 탐색용 (상, 하, 좌, 우, 대각선)
+            const dirs = [
+                [-1, -1], [-1, 0], [-1, 1],
+                [0, -1],           [0, 1],
+                [1, -1],  [1, 0],  [1, 1]
+            ];
+
+            // 1. 이어져 있는 격자들을 하나의 덩어리로 묶는 탐색(BFS) 로직
+            for (const key in gridData) {
+                if (visited.has(key)) continue;
+
+                const zoneId = gridData[key];
+                if (!ZONES[zoneId]) continue; 
+
+                const blob = [];
+                const queue = [key];
+                visited.add(key);
+
+                while (queue.length > 0) {
+                    const currentKey = queue.shift();
+                    blob.push(currentKey);
+                    
+                    const [latStr, lngStr] = currentKey.split('_');
+                    const latIdx = parseInt(latStr);
+                    const lngIdx = parseInt(lngStr);
+
+                    // 주변 8칸 검사
+                    for (const [dLat, dLng] of dirs) {
+                        const nLatIdx = latIdx + dLat;
+                        const nLngIdx = lngIdx + dLng;
+                        const nKey = `${nLatIdx}_${nLngIdx}`;
+                        
+                        // 인접한 곳에 같은 구역(zoneId)이 칠해져 있으면 같은 덩어리로 취급
+                        if (!visited.has(nKey) && gridData[nKey] === zoneId) {
+                            visited.add(nKey);
+                            queue.push(nKey);
+                        }
+                    }
+                }
+                blobs.push({ zoneId, keys: blob });
+            }
+
+            // 2. 분리된 각 덩어리(Blob)마다 개별적으로 중심점을 찾아 라벨 생성
+            for (const blob of blobs) {
+                const zoneId = blob.zoneId;
+                let sumLat = 0, sumLng = 0;
+                
+                blob.keys.forEach(key => {
+                    const [latIdx, lngIdx] = key.split('_').map(Number);
+                    sumLat += latIdx * LAT_GRID_SIZE + (LAT_GRID_SIZE / 2);
+                    sumLng += lngIdx * LNG_GRID_SIZE + (LNG_GRID_SIZE / 2);
+                });
+                
+                const avgLat = sumLat / blob.keys.length;
+                const avgLng = sumLng / blob.keys.length;
+
+                const icon = L.divIcon({
+                    className: 'zone-label-icon',
+                    html: `<div class="zone-label-text" style="color: ${ZONES[zoneId].color}; border-color: ${ZONES[zoneId].color}88;">${ZONES[zoneId].name}</div>`,
+                    iconSize: [0, 0] // 아이콘 크기를 0으로 만들어 텍스트 크기에 온전히 맞추도록 설정
+                });
+
+                L.marker([avgLat, avgLng], { icon: icon, interactive: false }).addTo(zoneLabelsLayer);
+            }
+        }
 
         const paletteContainer = document.getElementById('palette-container');
         
@@ -434,6 +589,7 @@
                 addZoneToPalette(zoneId, zone);
             }
             renderPalette();
+            updatePaletteVisibility();
         }
 
         function addZoneToPalette(zoneId, zone) {
@@ -507,14 +663,12 @@
         const modalZoneStyles = document.getElementById('modal-zone-styles');
         const btnResetDefault = document.getElementById('btn-reset-default-zone');
 
-        // 기본 색상 팔레트 스와치 클릭 이벤트
         document.querySelectorAll('.color-swatch').forEach(swatch => {
             swatch.addEventListener('click', (e) => {
                 document.getElementById('new-zone-color').value = e.target.getAttribute('data-color');
             });
         });
 
-        // 이탈 구역(기본) 수정 열기
         document.getElementById('btn-edit-default-zone').onclick = () => {
             editingZoneId = null;
             isEditingDefaultZone = true;
@@ -522,8 +676,8 @@
             document.getElementById('modal-title').innerText = "이탈 구역(기본) 음악 설정";
             document.getElementById('btn-submit-zone').innerText = "저장";
             
-            modalZoneStyles.classList.add('hidden'); // 색상, 패턴 설정 숨김
-            btnResetDefault.classList.remove('hidden'); // 초기화 버튼 표시
+            modalZoneStyles.classList.add('hidden'); 
+            btnResetDefault.classList.remove('hidden'); 
 
             document.getElementById('new-zone-vid').value = defaultZone.videoId || '';
             document.getElementById('new-zone-title').value = defaultZone.title || '';
@@ -532,20 +686,17 @@
             modal.classList.remove('hidden');
         };
 
-        // 이탈 구역(기본) 초기화 로직
         btnResetDefault.onclick = () => {
             defaultZone = { videoId: '', title: '' };
             updateDefaultZoneUI();
             modal.classList.add('hidden');
             scheduleFirebaseSave();
             
-            // 현재 이탈 구역(기본)에 있다면 즉시 음악 중지
             if (currentPlayingZone === 'default') {
                 playZoneAudio('default');
             }
         };
 
-        // 새 구역 추가
         document.getElementById('btn-add-zone').onclick = () => {
             editingZoneId = null;
             isEditingDefaultZone = false;
@@ -566,7 +717,6 @@
             modal.classList.remove('hidden');
         };
 
-        // 기존 구역 수정
         function openEditModal(zoneId) {
             editingZoneId = zoneId;
             isEditingDefaultZone = false;
@@ -600,6 +750,10 @@
                         gridLayer.removeLayer(gridRectangles[key]);
                         delete gridRectangles[key];
                     }
+                    if (magGridRectangles[key]) {
+                        magGridLayer.removeLayer(magGridRectangles[key]);
+                        delete magGridRectangles[key];
+                    }
                 }
             }
             
@@ -610,15 +764,15 @@
             
             initPalette();
             scheduleFirebaseSave(); 
+            updateZoneLabels();
         }
 
         document.getElementById('btn-cancel-zone').onclick = () => {
             modal.classList.add('hidden');
         };
 
-        // YouTube 링크에서 ID 추출하는 함수
         function extractYouTubeID(url) {
-            if (url.length === 11 && !url.includes('/')) return url; // 이미 11자리 ID인 경우
+            if (url.length === 11 && !url.includes('/')) return url;
             const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
             const match = url.match(regExp);
             return (match && match[2].length === 11) ? match[2] : null;
@@ -675,7 +829,6 @@
                 return;
             }
             if (!videoId && !isEditingDefaultZone) {
-                // 이탈 구역은 비워둘 수 있지만, 일반 구역은 필수
                 alert("YouTube Video ID 또는 링크는 필수입니다.");
                 return;
             }
@@ -689,7 +842,6 @@
                 modal.classList.add('hidden');
                 scheduleFirebaseSave();
                 
-                // 만약 현재 이탈 구역(기본)에 있다면 즉시 음악 변경
                 if (currentPlayingZone === 'default') {
                     playZoneAudio('default');
                 }
@@ -723,6 +875,7 @@
             setMode('paint');
             modal.classList.add('hidden');
             scheduleFirebaseSave(); 
+            updateZoneLabels();
         };
 
         // ==========================================
@@ -768,6 +921,10 @@
                                 gridLayer.removeLayer(gridRectangles[key]);
                                 delete gridRectangles[key];
                             }
+                            if (magGridRectangles[key]) {
+                                magGridLayer.removeLayer(magGridRectangles[key]);
+                                delete magGridRectangles[key];
+                            }
                             scheduleFirebaseSave(); 
                         }
                     }
@@ -785,12 +942,7 @@
             L.rectangle(bounds, { fillColor: zone.color, fillOpacity: 0.7, color: 'transparent', weight: 0, interactive: false }).addTo(group);
 
             const patternRect = L.rectangle(bounds, { 
-                fillColor: 'transparent', 
-                fillOpacity: 1, 
-                color: 'transparent', 
-                weight: 0, 
-                interactive: false,
-                className: 'zone-pattern-layer' // 패턴 숨김 처리를 위한 클래스 추가
+                fillColor: 'transparent', fillOpacity: 1, color: 'transparent', weight: 0, interactive: false, className: 'zone-pattern-layer'
             });
             if (zone.pattern && zone.pattern !== 'none') {
                 patternRect.on('add', function() { if (this._path) this._path.setAttribute('fill', zone.pattern); });
@@ -799,21 +951,35 @@
             
             group.addTo(gridLayer);
             gridRectangles[key] = group;
+
+            if (magGridLayer) {
+                const magGroup = L.layerGroup();
+                L.rectangle(bounds, { fillColor: zone.color, fillOpacity: 0.7, color: 'transparent', weight: 0, interactive: false }).addTo(magGroup);
+                const magPatternRect = L.rectangle(bounds, { fillColor: 'transparent', fillOpacity: 1, color: 'transparent', weight: 0, interactive: false, className: 'zone-pattern-layer' });
+                if (zone.pattern && zone.pattern !== 'none') {
+                    magPatternRect.on('add', function() { if (this._path) this._path.setAttribute('fill', zone.pattern); });
+                }
+                magPatternRect.addTo(magGroup);
+                magGroup.addTo(magGridLayer);
+                magGridRectangles[key] = magGroup;
+            }
         }
 
-        // 줌 레벨에 따라 패턴 레이어 가시성 업데이트 로직 추가
         function updatePatternVisibility() {
             if (map.getZoom() < 16) {
                 document.getElementById('map').classList.add('hide-patterns');
+                if (magMap) document.getElementById('mag-map').classList.add('hide-patterns');
             } else {
                 document.getElementById('map').classList.remove('hide-patterns');
+                if (magMap) document.getElementById('mag-map').classList.remove('hide-patterns');
             }
         }
         map.on('zoomend', updatePatternVisibility);
-        updatePatternVisibility(); // 초기화 시 한 번 실행
+        updatePatternVisibility(); 
 
         function updateBrushPreview(latlng) {
             brushPreviewLayer.clearLayers();
+            if (magBrushPreviewLayer) magBrushPreviewLayer.clearLayers();
             if (currentMode === 'pan' || !latlng) return;
 
             const { latIdx, lngIdx } = getGridCoords(latlng.lat, latlng.lng);
@@ -831,27 +997,50 @@
                 fillColor: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
                 fillOpacity: 0.1, interactive: false
             }).addTo(brushPreviewLayer);
+
+            if (magBrushPreviewLayer) {
+                L.rectangle([[minLat, minLng], [maxLat, maxLng]], {
+                    color: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
+                    weight: 2, dashArray: '4, 4',
+                    fillColor: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
+                    fillOpacity: 0.1, interactive: false
+                }).addTo(magBrushPreviewLayer);
+            }
         }
 
+        // --- 마우스 이벤트 (데스크탑) ---
         map.on('mousedown', (e) => {
-            if (e.originalEvent.button === 1) return; 
+            if (e.originalEvent.button === 1 || activeTouches > 0) return; 
             if (currentMode === 'pan') return;
             isPainting = true;
+            updatePaletteVisibility();
             handleDraw(e.latlng);
         });
         
         map.on('mousemove', (e) => {
+            if (activeTouches > 0) return; 
             updateBrushPreview(e.latlng); 
             if (!isPainting || currentMode === 'pan' || e.originalEvent.button === 1) return;
             handleDraw(e.latlng);
         });
         
-        map.on('mouseup', () => { isPainting = false; });
+        map.on('mouseup', () => { 
+            if (isPainting) {
+                isPainting = false; 
+                updatePaletteVisibility();
+                updateZoneLabels();
+            }
+        });
         map.on('mouseout', () => { 
-            isPainting = false; 
+            if (isPainting) {
+                isPainting = false; 
+                updatePaletteVisibility();
+                updateZoneLabels();
+            }
             brushPreviewLayer.clearLayers(); 
         });
 
+        // Wheel Click Pan logic
         let isMiddleClickPanning = false;
         let lastMousePos = null;
         const mapContainer = document.getElementById('map');
@@ -882,6 +1071,77 @@
         });
 
         // ==========================================
+        // 스마트 터치 이벤트 (모바일)
+        // ==========================================
+        let activeTouches = 0;
+        
+        // 1. UI 영역 핀치 줌 완벽 차단
+        const preventUIPinchZoom = (e) => {
+            if (e.touches && e.touches.length >= 2) {
+                if (!e.target.closest('#map')) {
+                    e.preventDefault(); 
+                }
+            }
+        };
+        document.addEventListener('touchstart', preventUIPinchZoom, { passive: false });
+        document.addEventListener('touchmove', preventUIPinchZoom, { passive: false });
+
+        // 2. 모바일 돋보기 렌더링 헬퍼
+        function updateMagnifierRaw(clientX, clientY, latlng) {
+            magnifierEl.classList.remove('hidden');
+            magnifierEl.style.left = clientX + 'px';
+            magnifierEl.style.top = (clientY - 100) + 'px';
+            magMap.setView(latlng, map.getZoom() + 1, {animate: false});
+        }
+
+        // 3. 지도 터치 컨트롤
+        mapContainer.addEventListener('touchstart', (e) => {
+            activeTouches = e.touches.length;
+            if (activeTouches === 1 && currentMode !== 'pan') {
+                isPaintingTouch = true;
+                updatePaletteVisibility();
+                
+                const touch = e.touches[0];
+                const latlng = map.mouseEventToLatLng(touch);
+                
+                handleDraw(latlng);
+                updateMagnifierRaw(touch.clientX, touch.clientY, latlng);
+            } else if (activeTouches >= 2) {
+                isPaintingTouch = false;
+                magnifierEl.classList.add('hidden');
+                if (currentMode !== 'pan') map.dragging.enable(); // 색칠 중 두 손가락 대면 Pan/Zoom 허용
+            }
+        }, { passive: false });
+
+        mapContainer.addEventListener('touchmove', (e) => {
+            if (activeTouches === 1 && isPaintingTouch && currentMode !== 'pan') {
+                e.preventDefault(); // 스크롤/스와이프 방지
+                const touch = e.touches[0];
+                const latlng = map.mouseEventToLatLng(touch);
+                
+                updateBrushPreview(latlng);
+                handleDraw(latlng);
+                updateMagnifierRaw(touch.clientX, touch.clientY, latlng);
+            }
+        }, { passive: false });
+
+        mapContainer.addEventListener('touchend', (e) => {
+            activeTouches = e.touches.length;
+            if (activeTouches === 0) {
+                if (isPaintingTouch) {
+                    isPaintingTouch = false;
+                    updatePaletteVisibility();
+                    updateZoneLabels();
+                }
+                magnifierEl.classList.add('hidden');
+                if (magBrushPreviewLayer) magBrushPreviewLayer.clearLayers();
+            }
+            if (activeTouches < 2 && currentMode !== 'pan') {
+                map.dragging.disable(); // 다시 색칠 모드 락 복귀
+            }
+        }, { passive: false });
+
+        // ==========================================
         // 6. 도구 모드 설정 및 UI 제어
         // ==========================================
         function setMode(mode) {
@@ -896,9 +1156,13 @@
             if (mode === 'pan') {
                 brushContainer.classList.add('hidden');
                 brushContainer.classList.remove('flex');
+                brushDivider.classList.add('hidden');
+                brushDivider.classList.remove('sm:block');
             } else {
                 brushContainer.classList.remove('hidden');
                 brushContainer.classList.add('flex');
+                brushDivider.classList.remove('hidden');
+                brushDivider.classList.add('sm:block');
             }
 
             if (mode === 'pan') {
@@ -909,6 +1173,7 @@
                 map.getContainer().style.cursor = mode === 'erase' ? 'cell' : 'crosshair';
             }
             renderPalette();
+            updatePaletteVisibility();
         }
 
         document.getElementById('btn-pan').onclick = () => setMode('pan');
@@ -1080,7 +1345,6 @@
             const { latIdx, lngIdx } = getGridCoords(lat, lng);
             const key = `${latIdx}_${lngIdx}`;
             
-            // 데이터가 없는 빈 공간이면 'default' 반환
             const targetZone = gridData[key] || 'default';
 
             if (currentPlayingZone !== targetZone) {
