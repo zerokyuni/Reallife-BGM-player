@@ -163,7 +163,7 @@
     <!-- Bottom Status Bar (모바일 스택 정렬) -->
     <div class="floating-ui bottom-4 sm:bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white rounded-xl sm:rounded-full px-4 sm:px-6 py-2 sm:py-3 flex flex-col sm:flex-row items-center sm:space-x-6 w-[92%] sm:min-w-[400px] justify-between shadow-xl gap-2 sm:gap-0">
         <div class="flex items-center space-x-3 w-full sm:w-auto">
-            <button id="btn-gps" class="text-gray-400 hover:text-white transition bg-gray-800 sm:bg-transparent p-2 sm:p-0 rounded-full sm:rounded-none" title="위치 추적 및 오디오 시작">
+            <button id="btn-gps" class="text-gray-400 hover:text-white transition bg-gray-800 sm:bg-transparent p-2 sm:p-0 rounded-full sm:rounded-none" title="내 위치로 이동">
                 <i class="fa-solid fa-location-crosshairs text-lg sm:text-xl"></i>
             </button>
             <div class="flex flex-col flex-grow">
@@ -260,7 +260,7 @@
                     compressedData[zoneId].push(key);
                 }
 
-                // [수정된 부분] ZONES 객체에서 파이어베이스에 저장할 수 없는 HTML 요소(element) 제거
+                // ZONES 객체에서 파이어베이스에 저장할 수 없는 HTML 요소(element) 제거
                 const cleanZonesDef = {};
                 for (const [zoneId, zoneData] of Object.entries(ZONES)) {
                     const { element, ...pureData } = zoneData;
@@ -339,9 +339,10 @@
             doubleClickZoom: false
         }).setView([35.8242, 127.1480], 18); 
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        // Google Maps Standard Roadmap 타일 적용
+        L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
             maxZoom: 21,
-            attribution: '© OpenStreetMap contributors, © CARTO'
+            attribution: '© Google Maps'
         }).addTo(map);
 
         const gridLayer = L.featureGroup().addTo(map);
@@ -785,42 +786,55 @@
         }
 
         // ==========================================
-        // 8. 위치 추적 (GPS) 로직
+        // 8. 위치 추적 (GPS) 자동 시작 로직
         // ==========================================
-        document.getElementById('btn-gps').onclick = () => {
+        function startGPSAuto() {
+            if (navigator.geolocation) {
+                document.getElementById('btn-gps').classList.add('text-blue-500');
+                
+                watchId = navigator.geolocation.watchPosition((pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+
+                    if (!userLocationMarker) {
+                        userLocationMarker = L.circleMarker([lat, lng], {
+                            color: 'white', fillColor: '#3b82f6', fillOpacity: 1, radius: 8, weight: 2
+                        }).addTo(map);
+                        map.panTo([lat, lng]);
+                    } else {
+                        userLocationMarker.setLatLng([lat, lng]);
+                    }
+
+                    checkLocationZone(lat, lng);
+
+                }, (err) => console.error("GPS 에러:", err), { enableHighAccuracy: true });
+            }
+        }
+
+        // 브라우저 정책 우회를 위한 1회성 글로벌 클릭 이벤트 (오디오 활성화용)
+        document.body.addEventListener('click', () => {
             if (!isAudioAllowed) {
                 isAudioAllowed = true;
                 if(ytPlayer1 && ytPlayer1.playVideo) {
-                    ytPlayer1.setVolume(0); ytPlayer1.playVideo(); ytPlayer1.pauseVideo();
+                    ytPlayer1.setVolume(0); 
+                    ytPlayer1.playVideo(); 
+                    ytPlayer1.pauseVideo();
+                }
+                // 위치가 이미 잡혀있다면 해당 구역 음악 바로 시작
+                if (currentPlayingZone) {
+                    playZoneAudio(currentPlayingZone);
                 }
             }
+        }, { once: true });
 
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-                document.getElementById('btn-gps').classList.remove('text-blue-500');
-                if (userLocationMarker) map.removeLayer(userLocationMarker);
-                return;
+        // 내 위치로 이동 버튼 로직 (끄기 기능 삭제됨)
+        document.getElementById('btn-gps').onclick = (e) => {
+            e.stopPropagation(); // 오디오 활성화 글로벌 클릭과 중복 방지
+            if (userLocationMarker) {
+                map.panTo(userLocationMarker.getLatLng());
+            } else {
+                alert("아직 위치를 찾는 중입니다...");
             }
-
-            document.getElementById('btn-gps').classList.add('text-blue-500');
-            
-            watchId = navigator.geolocation.watchPosition((pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-
-                if (!userLocationMarker) {
-                    userLocationMarker = L.circleMarker([lat, lng], {
-                        color: 'white', fillColor: '#3b82f6', fillOpacity: 1, radius: 8, weight: 2
-                    }).addTo(map);
-                    map.panTo([lat, lng]);
-                } else {
-                    userLocationMarker.setLatLng([lat, lng]);
-                }
-
-                checkLocationZone(lat, lng);
-
-            }, (err) => console.error("GPS 에러:", err), { enableHighAccuracy: true });
         };
 
         function checkLocationZone(lat, lng) {
@@ -833,6 +847,9 @@
                 playZoneAudio(targetZone);
             }
         }
+
+        // 앱 시작 시 GPS 자동 실행
+        startGPSAuto();
 
         // ==========================================
         // 9. Firebase 로그인 및 에러 핸들링
@@ -849,7 +866,6 @@
             } catch (error) {
                 console.error("로그인 실패 원인:", error);
                 
-                // 로그인 실패 원인 상세 알림
                 if (error.code === 'auth/unauthorized-domain') {
                     alert(`로그인 실패: 승인되지 않은 도메인입니다.\nFirebase 콘솔의 [Authentication] -> [설정] -> [승인된 도메인]에 현재 사이트 주소를 추가해주세요.`);
                 } else if (error.code === 'auth/popup-closed-by-user') {
@@ -890,7 +906,6 @@
                 compressedData[zoneId].push(key);
             }
 
-            // [수정된 부분] JSON 저장 시에도 HTML 요소(element) 제거
             const cleanZonesDef = {};
             for (const [zoneId, zoneData] of Object.entries(ZONES)) {
                 const { element, ...pureData } = zoneData;
