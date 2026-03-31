@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>BGM 구역 편집기 & 플레이어</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- FontAwesome (Icons) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+        #map { width: 100%; height: 100%; z-index: 1; }
+        
+        /* UI Floating Panels */
+        .floating-ui {
+            z-index: 1000;
+            position: absolute;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            backdrop-filter: blur(8px);
+        }
+
+        /* Tool active states */
+        .tool-btn.active {
+            background-color: #3b82f6; /* blue-500 */
+            color: white;
+            border-color: #2563eb;
+        }
+
+        /* Prevent text selection while painting */
+        .no-select {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans no-select">
+
+    <!-- SVG Patterns for Grid Visualization -->
+    <svg style="position: absolute; width: 0; height: 0;" aria-hidden="true">
+        <defs>
+            <pattern id="pattern-stripes" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="4" height="8" transform="translate(0,0)" fill="rgba(255,255,255,0.4)"></rect>
+            </pattern>
+            <pattern id="pattern-dots" x="0" y="0" width="8" height="8" patternUnits="userSpaceOnUse">
+                <circle cx="4" cy="4" r="2" fill="rgba(255,255,255,0.5)"></circle>
+            </pattern>
+            <pattern id="pattern-cross" width="8" height="8" patternUnits="userSpaceOnUse">
+                <path d="M 0 0 L 8 8 M 8 0 L 0 8" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"></path>
+            </pattern>
+        </defs>
+    </svg>
+
+    <!-- Hidden YouTube Players -->
+    <div id="youtube-container" class="hidden">
+        <div id="yt-player-1"></div>
+        <div id="yt-player-2"></div>
+    </div>
+
+    <!-- Top Toolbar -->
+    <div class="floating-ui top-4 left-1/2 transform -translate-x-1/2 bg-white/90 rounded-full px-4 py-2 flex items-center space-x-2 border border-gray-200">
+        <button id="btn-pan" class="tool-btn active w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="이동 (Pan)">
+            <i class="fa-solid fa-hand"></i>
+        </button>
+        <button id="btn-paint" class="tool-btn w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="그리기 (Paint)">
+            <i class="fa-solid fa-paintbrush"></i>
+        </button>
+        <button id="btn-erase" class="tool-btn w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition" title="지우개 (Eraser)">
+            <i class="fa-solid fa-eraser"></i>
+        </button>
+        
+        <div class="w-px h-6 bg-gray-300 mx-2"></div>
+        
+        <!-- 브러쉬 사이즈 조절 슬라이더 -->
+        <div id="brush-size-container" class="flex items-center space-x-2 px-2" title="브러쉬 사이즈">
+            <i class="fa-solid fa-circle text-gray-400 text-[8px]"></i>
+            <input type="range" id="brush-size" min="1" max="10" value="1" class="w-20 accent-blue-500 cursor-pointer">
+            <i class="fa-solid fa-circle text-gray-400 text-lg"></i>
+        </div>
+
+        <div id="brush-size-divider" class="w-px h-6 bg-gray-300 mx-2"></div>
+        
+        <button id="btn-save" class="px-3 py-2 rounded-lg text-sm font-medium text-green-700 hover:bg-green-50 transition flex items-center" title="현재 지도를 JSON 파일로 다운로드합니다">
+            <i class="fa-solid fa-file-export mr-1"></i> 파일 저장
+        </button>
+        <button id="btn-load" class="px-3 py-2 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-50 transition flex items-center" title="저장된 JSON 파일 지도를 불러옵니다">
+            <i class="fa-solid fa-file-import mr-1"></i> 파일 열기
+        </button>
+        
+        <div class="w-px h-6 bg-gray-300 mx-2"></div>
+        
+        <button id="btn-login" class="px-3 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition flex items-center">
+            <i class="fa-brands fa-google mr-1 text-red-500"></i> 로그인
+        </button>
+    </div>
+
+    <!-- Palette Sidebar -->
+    <div class="floating-ui top-20 left-4 bg-white/90 rounded-xl p-4 border border-gray-200 w-64 max-h-[70vh] flex flex-col">
+        <h3 class="font-bold text-gray-800 mb-3 text-sm flex-shrink-0">음악 구역 팔레트</h3>
+        <div id="palette-container" class="space-y-2 overflow-y-auto flex-grow mb-3 pr-1">
+            <!-- Palette items injected via JS -->
+        </div>
+        <button id="btn-add-zone" class="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-lg text-sm transition flex-shrink-0 border border-gray-300 border-dashed">
+            <i class="fa-solid fa-plus mr-1"></i> 새 구역 추가
+        </button>
+    </div>
+
+    <!-- Add Zone Modal -->
+    <div id="add-zone-modal" class="hidden fixed inset-0 bg-black/50 z-[2000] flex items-center justify-center">
+        <div class="bg-white rounded-xl p-6 w-80 shadow-2xl">
+            <h2 id="modal-title" class="text-lg font-bold mb-4">새 음악 구역 만들기</h2>
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">구역 이름</label>
+                    <input type="text" id="new-zone-name" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="예: 평화의 숲">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">구역 색상</label>
+                    <input type="color" id="new-zone-color" class="w-full h-10 border rounded cursor-pointer" value="#10b981">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">패턴 (옵션)</label>
+                    <select id="new-zone-pattern" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="url(#pattern-stripes)">빗금 (Stripes)</option>
+                        <option value="url(#pattern-dots)">점 (Dots)</option>
+                        <option value="url(#pattern-cross)">십자 (Cross)</option>
+                        <option value="none">없음 (단색)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">YouTube Video ID</label>
+                    <input type="text" id="new-zone-vid" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="예: jfKfPfyJRdk">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">음악 제목</label>
+                    <input type="text" id="new-zone-title" class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="예: Lofi Hip Hop">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-2">
+                <button id="btn-cancel-zone" class="px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded">취소</button>
+                <button id="btn-submit-zone" class="px-4 py-2 text-sm font-semibold text-white bg-blue-500 hover:bg-blue-600 rounded">추가</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Status Bar -->
+    <div class="floating-ui bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900/80 text-white rounded-full px-6 py-3 flex items-center space-x-6 min-w-[320px] justify-between">
+        <div class="flex items-center space-x-3">
+            <button id="btn-gps" class="text-gray-400 hover:text-white transition" title="위치 추적 및 오디오 시작">
+                <i class="fa-solid fa-location-crosshairs text-xl"></i>
+            </button>
+            <div class="flex flex-col">
+                <span id="status-zone" class="text-xs text-gray-300 font-semibold uppercase tracking-wider">구역 이탈 (빈 공간)</span>
+                <span id="status-song" class="text-sm font-medium truncate w-48">재생 중인 음악 없음</span>
+            </div>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span id="sync-status" class="text-xs text-gray-400 font-medium"></span>
+            <div id="auth-status" class="text-xs text-gray-400">
+                비로그인 상태
+            </div>
+        </div>
+    </div>
+
+    <!-- Map Container -->
+    <div id="map"></div>
+
+    <script type="module">
+        // ==========================================
+        // 1. Firebase 설정
+        // ==========================================
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+     
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyBwHbDLDjgxHczzfADi6XX0mxefk4TcmGs",
+            authDomain: "reallife-audio-zone.firebaseapp.com",
+            projectId: "reallife-audio-zone",
+            storageBucket: "reallife-audio-zone.firebasestorage.app",
+            messagingSenderId: "502159779380",
+            appId: "1:502159779380:web:f5932ddeea29c8cebd4c61",
+            measurementId: "G-FKGW29C24L"
+        };
+
+        let app, auth, db, currentUser = null;
+        try {
+            // apiKey가 입력되었을 때만 초기화 진행
+            if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "본인의_API_KEY를_여기에_넣어주세요") {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+            } else {
+                console.warn("Firebase 설정이 완료되지 않았습니다. 저장/불러오기 기능을 쓰려면 Config를 입력하세요.");
+            }
+        } catch (e) {
+            console.error("Firebase 초기화 에러:", e);
+        }
+
+        // ==========================================
+        // 2. 음악 구역 정의 (색상, 패턴, 유튜브 ID)
+        // ==========================================
+        let ZONES = {
+            'zone1': { name: '평화의 숲', color: '#10b981', pattern: 'url(#pattern-stripes)', videoId: 'jfKfPfyJRdk', title: 'Lofi Hip Hop - Relaxing' },
+            'zone2': { name: '열정의 거리', color: '#ef4444', pattern: 'url(#pattern-dots)', videoId: '5qap5aO4i9A', title: 'Lofi Girl - Study/Chill' },
+            'zone3': { name: '신비의 바다', color: '#3b82f6', pattern: 'url(#pattern-cross)', videoId: 'lTRiuFIWV54', title: 'Ocean Waves & Piano' }
+        };
+
+        // ==========================================
+        // 3. 상태 변수
+        // ==========================================
+        const GRID_SIZE = 0.0001; // 약 11미터
+        let currentMode = 'pan'; // 'pan', 'paint', 'erase'
+        let selectedZone = 'zone1';
+        let isPainting = false;
+        
+        // 데이터 구조: { "위도인덱스_경도인덱스": "zoneID" }
+        const gridData = {}; 
+        const gridRectangles = {}; // 화면에 그려진 Leaflet Rect 객체들
+
+        let userLocationMarker = null;
+        let watchId = null;
+        let currentPlayingZone = null;
+        let isAudioAllowed = false; // 사용자 상호작용 후 true로 변경
+        let editingZoneId = null; // 현재 수정 중인 구역 ID
+
+        // ==========================================
+        // Firebase 실시간 동기화 함수
+        // ==========================================
+        let saveTimeout = null;
+        function scheduleFirebaseSave() {
+            if (!currentUser || !db) return; // 로그인 안 되어 있으면 무시
+            
+            const syncStatus = document.getElementById('sync-status');
+            syncStatus.textContent = '저장 대기 중...';
+            syncStatus.className = 'text-xs text-yellow-500 font-medium';
+
+            if (saveTimeout) clearTimeout(saveTimeout);
+            
+            // 1.5초(1500ms) 동안 추가 작업이 없으면 Firebase에 저장 (디바운스 처리)
+            saveTimeout = setTimeout(async () => {
+                syncStatus.textContent = '저장 중...';
+                
+                const compressedData = {};
+                for (const [key, zoneId] of Object.entries(gridData)) {
+                    if (!compressedData[zoneId]) compressedData[zoneId] = [];
+                    compressedData[zoneId].push(key);
+                }
+
+                try {
+                    const docRef = doc(db, 'users', currentUser.uid, 'bgm_zones', 'data');
+                    await setDoc(docRef, { 
+                        zonesDef: ZONES,
+                        zones: compressedData,
+                        updatedAt: new Date().toISOString()
+                    });
+                    syncStatus.textContent = '클라우드 동기화 됨';
+                    syncStatus.className = 'text-xs text-green-500 font-medium';
+                    
+                    // 3초 후 메시지 숨김
+                    setTimeout(() => { syncStatus.textContent = ''; }, 3000);
+                } catch (e) {
+                    console.error("실시간 저장 실패:", e);
+                    syncStatus.textContent = '저장 실패';
+                    syncStatus.className = 'text-xs text-red-500 font-medium';
+                }
+            }, 1500);
+        }
+
+        async function loadFromFirebase() {
+            if (!db || !currentUser) return;
+            
+            const syncStatus = document.getElementById('sync-status');
+            syncStatus.textContent = '클라우드 불러오는 중...';
+            syncStatus.className = 'text-xs text-blue-500 font-medium';
+
+            try {
+                const docRef = doc(db, 'users', currentUser.uid, 'bgm_zones', 'data');
+                const docSnap = await getDoc(docRef);
+                
+                if (docSnap.exists()) {
+                    gridLayer.clearLayers();
+                    for (const key in gridData) delete gridData[key];
+                    for (const key in gridRectangles) delete gridRectangles[key];
+
+                    const data = docSnap.data();
+                    
+                    if (data.zonesDef) {
+                        ZONES = data.zonesDef;
+                        initPalette();
+                    }
+
+                    if (data.zones) {
+                        for (const [zoneId, keys] of Object.entries(data.zones)) {
+                            keys.forEach(key => {
+                                gridData[key] = zoneId;
+                                const [latStr, lngStr] = key.split('_');
+                                drawRect(key, parseInt(latStr), parseInt(lngStr), zoneId);
+                            });
+                        }
+                    }
+                    syncStatus.textContent = '동기화 완료';
+                    syncStatus.className = 'text-xs text-green-500 font-medium';
+                    setTimeout(() => { syncStatus.textContent = ''; }, 3000);
+                } else {
+                    syncStatus.textContent = '저장된 데이터 없음';
+                    setTimeout(() => { syncStatus.textContent = ''; }, 3000);
+                }
+            } catch (e) {
+                console.error("불러오기 에러:", e);
+                syncStatus.textContent = '불러오기 실패';
+                syncStatus.className = 'text-xs text-red-500 font-medium';
+            }
+        }
+
+        // ==========================================
+        // 4. 지도 및 팔레트 초기화
+        // ==========================================
+        const map = L.map('map', {
+            zoomControl: false,
+            doubleClickZoom: false
+        }).setView([35.8242, 127.1480], 18); // 전주 한옥마을 부근
+
+        // 타일 서버 변경 (Access Blocked 해결을 위해 CartoDB Voyager 사용)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            maxZoom: 21,
+            attribution: '© OpenStreetMap contributors, © CARTO'
+        }).addTo(map);
+
+        const gridLayer = L.featureGroup().addTo(map);
+        const brushPreviewLayer = L.featureGroup().addTo(map); // 브러쉬 미리보기 레이어
+
+        // 팔레트 렌더링 함수
+        const paletteContainer = document.getElementById('palette-container');
+        
+        function initPalette() {
+            paletteContainer.innerHTML = ''; // 초기화
+            for (const [zoneId, zone] of Object.entries(ZONES)) {
+                addZoneToPalette(zoneId, zone);
+            }
+            renderPalette();
+        }
+
+        function addZoneToPalette(zoneId, zone) {
+            const el = document.createElement('div');
+            el.className = `p-2 rounded border-2 transition ${selectedZone === zoneId ? 'border-gray-800 shadow-md bg-gray-50' : 'border-transparent hover:bg-gray-100'}`;
+            
+            let bgStyle = `background-color: ${zone.color};`;
+            let patternOverlay = '';
+            if (zone.pattern === 'url(#pattern-stripes)') patternOverlay = 'repeating-linear-gradient(45deg, transparent, transparent 2px, white 2px, white 4px)';
+            else if (zone.pattern === 'url(#pattern-dots)') patternOverlay = 'radial-gradient(white 20%, transparent 20%) 0 0 / 6px 6px';
+            else if (zone.pattern === 'url(#pattern-cross)') patternOverlay = 'repeating-linear-gradient(0deg, transparent, transparent 3px, white 3px, white 4px), repeating-linear-gradient(90deg, transparent, transparent 3px, white 3px, white 4px)';
+
+            el.innerHTML = `
+                <div class="flex items-center justify-between w-full">
+                    <div class="flex items-center space-x-3 w-40 cursor-pointer zone-select-area">
+                        <div class="w-6 h-6 rounded border border-gray-300 relative overflow-hidden shrink-0" style="${bgStyle}">
+                            <div class="absolute inset-0 opacity-50" style="background: ${patternOverlay};"></div>
+                        </div>
+                        <div class="truncate">
+                            <div class="text-sm font-bold text-gray-800 truncate">${zone.name}</div>
+                            <div class="text-xs text-gray-500 truncate">${zone.title}</div>
+                        </div>
+                    </div>
+                    <div class="flex space-x-1 text-gray-400 shrink-0">
+                        <button class="hover:text-blue-500 p-1 btn-edit-zone" title="수정"><i class="fa-solid fa-pen"></i></button>
+                        <button class="hover:text-red-500 p-1 btn-del-zone" title="삭제"><i class="fa-solid fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+            
+            el.querySelector('.zone-select-area').onclick = () => {
+                selectedZone = zoneId;
+                if (currentMode !== 'paint') setMode('paint');
+                renderPalette();
+            };
+
+            el.querySelector('.btn-edit-zone').onclick = (e) => {
+                e.stopPropagation();
+                openEditModal(zoneId);
+            };
+
+            el.querySelector('.btn-del-zone').onclick = (e) => {
+                e.stopPropagation();
+                deleteZoneLocally(zoneId);
+            };
+
+            paletteContainer.appendChild(el);
+            zone.element = el;
+        }
+
+        function renderPalette() {
+            for (const [zoneId, zone] of Object.entries(ZONES)) {
+                if (!zone.element) continue;
+                if (selectedZone === zoneId && currentMode === 'paint') {
+                    zone.element.classList.add('border-gray-800', 'shadow-md', 'bg-gray-50');
+                    zone.element.classList.remove('border-transparent');
+                } else {
+                    zone.element.classList.remove('border-gray-800', 'shadow-md', 'bg-gray-50');
+                    zone.element.classList.add('border-transparent');
+                }
+            }
+        }
+
+        initPalette();
+
+        // ==========================================
+        // 4-1. 새 구역 추가 모달 제어 로직
+        // ==========================================
+        const modal = document.getElementById('add-zone-modal');
+        document.getElementById('btn-add-zone').onclick = () => {
+            editingZoneId = null;
+            document.getElementById('modal-title').innerText = "새 음악 구역 만들기";
+            document.getElementById('btn-submit-zone').innerText = "추가";
+            
+            // 폼 초기화
+            document.getElementById('new-zone-name').value = '';
+            document.getElementById('new-zone-color').value = '#10b981';
+            document.getElementById('new-zone-pattern').value = 'url(#pattern-stripes)';
+            document.getElementById('new-zone-vid').value = '';
+            document.getElementById('new-zone-title').value = '';
+
+            modal.classList.remove('hidden');
+        };
+
+        function openEditModal(zoneId) {
+            editingZoneId = zoneId;
+            const zone = ZONES[zoneId];
+            
+            document.getElementById('modal-title').innerText = "음악 구역 수정하기";
+            document.getElementById('btn-submit-zone').innerText = "수정";
+            
+            document.getElementById('new-zone-name').value = zone.name;
+            document.getElementById('new-zone-color').value = zone.color;
+            document.getElementById('new-zone-pattern').value = zone.pattern;
+            document.getElementById('new-zone-vid').value = zone.videoId;
+            document.getElementById('new-zone-title').value = zone.title;
+
+            modal.classList.remove('hidden');
+        }
+
+        function deleteZoneLocally(zoneId) {
+            if (!confirm(`'${ZONES[zoneId].name}' 구역을 삭제하시겠습니까?\n(지도에 칠해진 해당 구역 데이터도 함께 지워집니다)`)) return;
+            
+            // 1. ZONES에서 삭제
+            delete ZONES[zoneId];
+            
+            // 2. 그리드 데이터 및 렌더링 삭제
+            for (const key in gridData) {
+                if (gridData[key] === zoneId) {
+                    delete gridData[key];
+                    if (gridRectangles[key]) {
+                        gridLayer.removeLayer(gridRectangles[key]);
+                        delete gridRectangles[key];
+                    }
+                }
+            }
+            
+            // 3. 현재 선택된 존이 지워졌다면 다른 존으로 변경
+            if (selectedZone === zoneId) {
+                const keys = Object.keys(ZONES);
+                selectedZone = keys.length > 0 ? keys[0] : null;
+            }
+            
+            initPalette();
+            scheduleFirebaseSave(); // 변경사항 실시간 저장
+        }
+
+        document.getElementById('btn-cancel-zone').onclick = () => {
+            modal.classList.add('hidden');
+        };
+
+        document.getElementById('btn-submit-zone').onclick = () => {
+            const name = document.getElementById('new-zone-name').value.trim();
+            const color = document.getElementById('new-zone-color').value;
+            const pattern = document.getElementById('new-zone-pattern').value;
+            const videoId = document.getElementById('new-zone-vid').value.trim();
+            const title = document.getElementById('new-zone-title').value.trim();
+
+            if (!name || !videoId) {
+                alert("구역 이름과 YouTube Video ID는 필수입니다.");
+                return;
+            }
+
+            if (editingZoneId) {
+                // 수정 모드
+                ZONES[editingZoneId] = { name, color, pattern, videoId, title: title || '알 수 없는 음악' };
+                
+                // 해당 구역을 사용하는 지도 사각형 갱신
+                for (const key in gridData) {
+                    if (gridData[key] === editingZoneId) {
+                        const [latStr, lngStr] = key.split('_');
+                        if (gridRectangles[key]) gridLayer.removeLayer(gridRectangles[key]);
+                        delete gridRectangles[key];
+                        drawRect(key, parseInt(latStr), parseInt(lngStr), editingZoneId);
+                    }
+                }
+                selectedZone = editingZoneId;
+            } else {
+                // 추가 모드
+                const newZoneId = 'zone_' + Date.now();
+                ZONES[newZoneId] = {
+                    name: name,
+                    color: color,
+                    pattern: pattern,
+                    videoId: videoId,
+                    title: title || '알 수 없는 음악'
+                };
+                selectedZone = newZoneId;
+            }
+
+            initPalette();
+            setMode('paint');
+            modal.classList.add('hidden');
+
+            scheduleFirebaseSave(); // 변경사항 실시간 저장
+        };
+
+        // ==========================================
+        // 5. 그리드 페인팅 핵심 로직
+        // ==========================================
+        function getGridCoords(lat, lng) {
+            return {
+                latIdx: Math.floor(lat / GRID_SIZE),
+                lngIdx: Math.floor(lng / GRID_SIZE)
+            };
+        }
+
+        function getBounds(latIdx, lngIdx) {
+            return [
+                [latIdx * GRID_SIZE, lngIdx * GRID_SIZE],
+                [(latIdx + 1) * GRID_SIZE, (lngIdx + 1) * GRID_SIZE]
+            ];
+        }
+
+        function handleDraw(latlng) {
+            const { latIdx, lngIdx } = getGridCoords(latlng.lat, latlng.lng);
+            const brushSize = parseInt(document.getElementById('brush-size').value, 10);
+            const offset = brushSize - 1; // 1이면 0(본인만), 2면 -1~1(3x3), 3이면 -2~2(5x5)
+
+            if (currentMode === 'paint' && (!selectedZone || !ZONES[selectedZone])) return; // 선택 구역 보호 방어코드
+
+            for (let i = -offset; i <= offset; i++) {
+                for (let j = -offset; j <= offset; j++) {
+                    const currentLatIdx = latIdx + i;
+                    const currentLngIdx = lngIdx + j;
+                    const key = `${currentLatIdx}_${currentLngIdx}`;
+
+                    if (currentMode === 'paint') {
+                        // [핵심 로직] 기존 구역 우선 (Priority): 이미 색칠된 곳이면 무시
+                        if (gridData[key]) continue; 
+
+                        // 데이터 저장 및 렌더링
+                        gridData[key] = selectedZone;
+                        drawRect(key, currentLatIdx, currentLngIdx, selectedZone);
+                        scheduleFirebaseSave(); // 변경사항 실시간 저장
+                    } 
+                    else if (currentMode === 'erase') {
+                        // [핵심 로직] 지우개: 데이터 삭제 및 사각형 제거
+                        if (gridData[key]) {
+                            delete gridData[key];
+                            if (gridRectangles[key]) {
+                                gridLayer.removeLayer(gridRectangles[key]);
+                                delete gridRectangles[key];
+                            }
+                            scheduleFirebaseSave(); // 변경사항 실시간 저장
+                        }
+                    }
+                }
+            }
+        }
+
+        function drawRect(key, latIdx, lngIdx, zoneId) {
+            if (gridRectangles[key]) return; // 이미 그려진 객체 방어코드
+            
+            const bounds = getBounds(latIdx, lngIdx);
+            const zone = ZONES[zoneId];
+            
+            // 레이어 2개를 겹치기 위해 Group 사용
+            const group = L.layerGroup();
+
+            // 1. 색상 배경 사각형
+            const bgRect = L.rectangle(bounds, {
+                fillColor: zone.color,
+                fillOpacity: 0.7,
+                color: 'transparent',
+                weight: 0,
+                interactive: false
+            }).addTo(group);
+
+            // 2. 패턴(및 테두리) 사각형
+            const patternRect = L.rectangle(bounds, {
+                fillColor: 'transparent',
+                fillOpacity: 1,
+                color: 'white', // 격자선
+                weight: 1,
+                interactive: false 
+            });
+
+            if (zone.pattern && zone.pattern !== 'none') {
+                patternRect.on('add', function() {
+                    if (this._path) this._path.setAttribute('fill', zone.pattern);
+                });
+            }
+
+            patternRect.addTo(group);
+            
+            group.addTo(gridLayer);
+            gridRectangles[key] = group;
+        }
+
+        // 마우스 주변 브러쉬 크기 미리보기 렌더링
+        function updateBrushPreview(latlng) {
+            brushPreviewLayer.clearLayers();
+            if (currentMode === 'pan' || !latlng) return;
+
+            const { latIdx, lngIdx } = getGridCoords(latlng.lat, latlng.lng);
+            const brushSize = parseInt(document.getElementById('brush-size').value, 10);
+            const offset = brushSize - 1;
+
+            const minLat = (latIdx - offset) * GRID_SIZE;
+            const minLng = (lngIdx - offset) * GRID_SIZE;
+            const maxLat = (latIdx + offset + 1) * GRID_SIZE;
+            const maxLng = (lngIdx + offset + 1) * GRID_SIZE;
+
+            L.rectangle([[minLat, minLng], [maxLat, maxLng]], {
+                color: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
+                weight: 2,
+                dashArray: '4, 4',
+                fillColor: currentMode === 'erase' ? '#ef4444' : '#3b82f6',
+                fillOpacity: 0.1,
+                interactive: false
+            }).addTo(brushPreviewLayer);
+        }
+
+        // 마우스 및 터치 이벤트 바인딩
+        map.on('mousedown', (e) => {
+            if (e.originalEvent.button === 1) return; // 마우스 휠 클릭 시 페인팅 무시
+            if (currentMode === 'pan') return;
+            isPainting = true;
+            handleDraw(e.latlng);
+        });
+        
+        map.on('mousemove', (e) => {
+            updateBrushPreview(e.latlng); // 브러쉬 미리보기 업데이트
+            if (!isPainting || currentMode === 'pan' || e.originalEvent.button === 1) return;
+            handleDraw(e.latlng);
+        });
+        
+        map.on('mouseup', () => { isPainting = false; });
+        map.on('mouseout', () => { 
+            isPainting = false; 
+            brushPreviewLayer.clearLayers(); // 맵을 벗어나면 미리보기 숨김
+        });
+
+        // 휠 클릭(Middle Click) 맵 드래그(Pan) 처리 로직
+        let isMiddleClickPanning = false;
+        let lastMousePos = null;
+        const mapContainer = document.getElementById('map');
+
+        mapContainer.addEventListener('mousedown', (e) => {
+            if (e.button === 1) { // 휠 클릭 (가운데 버튼)
+                e.preventDefault();
+                isMiddleClickPanning = true;
+                lastMousePos = { x: e.clientX, y: e.clientY };
+                mapContainer.style.cursor = 'grabbing';
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (isMiddleClickPanning) {
+                const dx = e.clientX - lastMousePos.x;
+                const dy = e.clientY - lastMousePos.y;
+                map.panBy([-dx, -dy], { animate: false });
+                lastMousePos = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 1 && isMiddleClickPanning) {
+                isMiddleClickPanning = false;
+                // 이전 커서 상태로 복구
+                mapContainer.style.cursor = currentMode === 'pan' ? 'grab' : (currentMode === 'erase' ? 'cell' : 'crosshair');
+            }
+        });
+
+        // ==========================================
+        // 6. 도구 모드 설정 및 UI 제어
+        // ==========================================
+        function setMode(mode) {
+            currentMode = mode;
+            
+            // UI 버튼 업데이트
+            document.getElementById('btn-pan').classList.toggle('active', mode === 'pan');
+            document.getElementById('btn-paint').classList.toggle('active', mode === 'paint');
+            document.getElementById('btn-erase').classList.toggle('active', mode === 'erase');
+
+            // 브러쉬 사이즈 슬라이더 표시/숨김 처리
+            const brushContainer = document.getElementById('brush-size-container');
+            const brushDivider = document.getElementById('brush-size-divider');
+            if (mode === 'pan') {
+                brushContainer.classList.add('hidden');
+                brushContainer.classList.remove('flex');
+                brushDivider.classList.add('hidden');
+            } else {
+                brushContainer.classList.remove('hidden');
+                brushContainer.classList.add('flex');
+                brushDivider.classList.remove('hidden');
+            }
+
+            // 지도 상호작용 설정
+            if (mode === 'pan') {
+                map.dragging.enable();
+                map.getContainer().style.cursor = 'grab';
+            } else {
+                map.dragging.disable(); // 페인팅 중 드래그 방지
+                map.getContainer().style.cursor = mode === 'erase' ? 'cell' : 'crosshair';
+            }
+            renderPalette();
+        }
+
+        document.getElementById('btn-pan').onclick = () => setMode('pan');
+        document.getElementById('btn-paint').onclick = () => setMode('paint');
+        document.getElementById('btn-erase').onclick = () => setMode('erase');
+
+        // ==========================================
+        // 7. YouTube 오디오 심리스 재생 (크로스페이드)
+        // ==========================================
+        let ytPlayer1, ytPlayer2;
+        let activePlayer = 1;
+        let isYtReady = false;
+
+        // YouTube API 스크립트 로드
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        window.onYouTubeIframeAPIReady = function() {
+            const pConfig = { height: '1', width: '1', playerVars: { 'playsinline': 1, 'controls': 0, 'loop': 1 } };
+            
+            ytPlayer1 = new YT.Player('yt-player-1', { ...pConfig, events: { 'onReady': onPlayerReady }});
+            ytPlayer2 = new YT.Player('yt-player-2', { ...pConfig, events: { 'onReady': onPlayerReady }});
+        };
+
+        let playersReadyCount = 0;
+        function onPlayerReady(event) {
+            playersReadyCount++;
+            if (playersReadyCount === 2) isYtReady = true;
+        }
+
+        function playZoneAudio(zoneId) {
+            if (!isYtReady || !isAudioAllowed) return;
+
+            const nextVideoId = zoneId ? ZONES[zoneId].videoId : null;
+            const pOut = activePlayer === 1 ? ytPlayer1 : ytPlayer2;
+            const pIn = activePlayer === 1 ? ytPlayer2 : ytPlayer1;
+
+            if (!nextVideoId) {
+                // 빈 격자로 이동: 서서히 페이드 아웃
+                fadeAudio(pOut, pOut.getVolume(), 0, () => pOut.pauseVideo());
+                updateStatusUI(null);
+                return;
+            }
+
+            // 크로스페이드 (Crossfade) 3초
+            pIn.loadVideoById({ videoId: nextVideoId });
+            pIn.setVolume(0);
+            pIn.playVideo();
+
+            fadeAudio(pOut, pOut.getVolume() || 100, 0, () => pOut.pauseVideo());
+            fadeAudio(pIn, 0, 100);
+            
+            activePlayer = activePlayer === 1 ? 2 : 1;
+            updateStatusUI(zoneId);
+        }
+
+        function fadeAudio(player, startVol, endVol, onComplete) {
+            if (!player || typeof player.setVolume !== 'function') return;
+            
+            const duration = 3000; // 3초
+            const steps = 30;
+            const stepTime = duration / steps;
+            const volStep = (endVol - startVol) / steps;
+            let currentVol = startVol;
+            let currentStep = 0;
+
+            const interval = setInterval(() => {
+                currentStep++;
+                currentVol += volStep;
+                
+                // 범위를 벗어나지 않게 보정
+                if (currentVol < 0) currentVol = 0;
+                if (currentVol > 100) currentVol = 100;
+                
+                player.setVolume(currentVol);
+
+                if (currentStep >= steps) {
+                    clearInterval(interval);
+                    player.setVolume(endVol);
+                    if (onComplete) onComplete();
+                }
+            }, stepTime);
+        }
+
+        function updateStatusUI(zoneId) {
+            const statusZone = document.getElementById('status-zone');
+            const statusSong = document.getElementById('status-song');
+
+            if (zoneId && ZONES[zoneId]) {
+                statusZone.textContent = `현재 구역: ${ZONES[zoneId].name}`;
+                statusZone.style.color = ZONES[zoneId].color;
+                statusSong.textContent = ZONES[zoneId].title;
+            } else {
+                statusZone.textContent = `구역 이탈 (빈 공간)`;
+                statusZone.style.color = '#d1d5db';
+                statusSong.textContent = '재생 중인 음악 없음';
+            }
+        }
+
+        // ==========================================
+        // 8. 위치 추적 (GPS) 로직
+        // ==========================================
+        document.getElementById('btn-gps').onclick = () => {
+            if (!isAudioAllowed) {
+                // 브라우저 정책 우회 (최초 클릭 시 빈 소리 재생)
+                isAudioAllowed = true;
+                if(ytPlayer1 && ytPlayer1.playVideo) {
+                    ytPlayer1.setVolume(0); ytPlayer1.playVideo(); ytPlayer1.pauseVideo();
+                }
+            }
+
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                document.getElementById('btn-gps').classList.remove('text-blue-500');
+                if (userLocationMarker) map.removeLayer(userLocationMarker);
+                return;
+            }
+
+            document.getElementById('btn-gps').classList.add('text-blue-500');
+            
+            watchId = navigator.geolocation.watchPosition((pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+
+                if (!userLocationMarker) {
+                    userLocationMarker = L.circleMarker([lat, lng], {
+                        color: 'white', fillColor: '#3b82f6', fillOpacity: 1, radius: 8, weight: 2
+                    }).addTo(map);
+                    map.panTo([lat, lng]);
+                } else {
+                    userLocationMarker.setLatLng([lat, lng]);
+                }
+
+                checkLocationZone(lat, lng);
+
+            }, (err) => console.error("GPS 에러:", err), { enableHighAccuracy: true });
+        };
+
+        function checkLocationZone(lat, lng) {
+            const { latIdx, lngIdx } = getGridCoords(lat, lng);
+            const key = `${latIdx}_${lngIdx}`;
+            const targetZone = gridData[key] || null;
+
+            if (currentPlayingZone !== targetZone) {
+                currentPlayingZone = targetZone;
+                playZoneAudio(targetZone);
+            }
+        }
+
+        // ==========================================
+        // 9. Firebase 데이터 저장 및 로드 (효율화 로직)
+        // ==========================================
+        document.getElementById('btn-login').onclick = async () => {
+            if (!auth) return alert("Firebase Config가 설정되지 않았습니다. 소스 코드에 인증 정보를 입력해주세요.");
+            if (currentUser) {
+                auth.signOut();
+                return;
+            }
+            try {
+                const provider = new GoogleAuthProvider();
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("로그인 실패:", error);
+            }
+        };
+
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+                const loginBtn = document.getElementById('btn-login');
+                const authStatus = document.getElementById('auth-status');
+                
+                if (user) {
+                    loginBtn.innerHTML = `<i class="fa-solid fa-sign-out-alt mr-1"></i> 로그아웃`;
+                    authStatus.textContent = `${user.displayName}님`;
+                    
+                    // 로그인 시 Firebase에서 데이터 자동 로드
+                    loadFromFirebase();
+                } else {
+                    loginBtn.innerHTML = `<i class="fa-brands fa-google mr-1 text-red-500"></i> 로그인`;
+                    authStatus.textContent = '비로그인 상태';
+                    document.getElementById('sync-status').textContent = '';
+                }
+            });
+        }
+
+        // ------------------------------------------
+        // JSON 파일로 내보내기 (로컬 저장)
+        // ------------------------------------------
+        document.getElementById('btn-save').onclick = () => {
+            const compressedData = {};
+            for (const [key, zoneId] of Object.entries(gridData)) {
+                if (!compressedData[zoneId]) compressedData[zoneId] = [];
+                compressedData[zoneId].push(key);
+            }
+
+            const exportData = { 
+                zonesDef: ZONES, 
+                zones: compressedData,
+                exportedAt: new Date().toISOString()
+            };
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bgm_zones_export_${new Date().getTime()}.json`;
+            a.click();
+            
+            URL.revokeObjectURL(url);
+        };
+
+        // ------------------------------------------
+        // JSON 파일 불러오기 (로컬 열기)
+        // ------------------------------------------
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const data = JSON.parse(event.target.result);
+                    
+                    // 화면 지우기
+                    gridLayer.clearLayers();
+                    for (const key in gridData) delete gridData[key];
+                    for (const key in gridRectangles) delete gridRectangles[key];
+                    
+                    if (data.zonesDef) {
+                        ZONES = data.zonesDef;
+                        initPalette();
+                    }
+
+                    if (data.zones) {
+                        for (const [zoneId, keys] of Object.entries(data.zones)) {
+                            keys.forEach(key => {
+                                gridData[key] = zoneId;
+                                const [latStr, lngStr] = key.split('_');
+                                drawRect(key, parseInt(latStr), parseInt(lngStr), zoneId);
+                            });
+                        }
+                    }
+                    
+                    alert("JSON 파일을 성공적으로 불러왔습니다.");
+                    
+                    // 파일을 불러오면 클라우드에도 자동으로 반영되도록 처리
+                    scheduleFirebaseSave(); 
+                    
+                } catch (err) {
+                    console.error("JSON 파싱 에러:", err);
+                    alert("잘못된 형식의 JSON 파일입니다.");
+                }
+                
+                // 같은 파일을 다시 열 수 있도록 초기화
+                fileInput.value = ''; 
+            };
+            reader.readAsText(file);
+        };
+
+        document.getElementById('btn-load').onclick = () => {
+            fileInput.click();
+        };
+
+        // 초기 모드 설정
+        setMode('pan');
+
+    </script>
+</body>
+</html>
