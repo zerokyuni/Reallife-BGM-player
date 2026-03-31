@@ -260,10 +260,17 @@
                     compressedData[zoneId].push(key);
                 }
 
+                // [수정된 부분] ZONES 객체에서 파이어베이스에 저장할 수 없는 HTML 요소(element) 제거
+                const cleanZonesDef = {};
+                for (const [zoneId, zoneData] of Object.entries(ZONES)) {
+                    const { element, ...pureData } = zoneData;
+                    cleanZonesDef[zoneId] = pureData;
+                }
+
                 try {
                     const docRef = doc(db, 'users', currentUser.uid, 'bgm_zones', 'data');
                     await setDoc(docRef, { 
-                        zonesDef: ZONES,
+                        zonesDef: cleanZonesDef,
                         zones: compressedData,
                         updatedAt: new Date().toISOString()
                     });
@@ -882,7 +889,15 @@
                 if (!compressedData[zoneId]) compressedData[zoneId] = [];
                 compressedData[zoneId].push(key);
             }
-            const exportData = { zonesDef: ZONES, zones: compressedData, exportedAt: new Date().toISOString() };
+
+            // [수정된 부분] JSON 저장 시에도 HTML 요소(element) 제거
+            const cleanZonesDef = {};
+            for (const [zoneId, zoneData] of Object.entries(ZONES)) {
+                const { element, ...pureData } = zoneData;
+                cleanZonesDef[zoneId] = pureData;
+            }
+
+            const exportData = { zonesDef: cleanZonesDef, zones: compressedData, exportedAt: new Date().toISOString() };
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
