@@ -219,9 +219,9 @@
         // 2. 음악 구역 정의 (색상, 패턴, 유튜브 ID)
         // ==========================================
         let ZONES = {
-            'zone1': { name: '평화의 숲', color: '#10b981', pattern: 'url(#pattern-stripes)', videoId: 'jfKfPfyJRdk', title: 'Lofi Hip Hop - Relaxing' },
-            'zone2': { name: '열정의 거리', color: '#ef4444', pattern: 'url(#pattern-dots)', videoId: '5qap5aO4i9A', title: 'Lofi Girl - Study/Chill' },
-            'zone3': { name: '신비의 바다', color: '#3b82f6', pattern: 'url(#pattern-cross)', videoId: 'lTRiuFIWV54', title: 'Ocean Waves & Piano' }
+            'zone1': { name: '나의 집', color: '#10b981', pattern: 'url(#pattern-stripes)', videoId: 'jfKfPfyJRdk', title: '아늑한 휴식 (Lofi Chill)' },
+            'zone2': { name: '회사 / 학교', color: '#3b82f6', pattern: 'url(#pattern-dots)', videoId: '5qap5aO4i9A', title: '집중 모드 (Study/Work)' },
+            'zone3': { name: '상점 / 카페', color: '#f59e0b', pattern: 'url(#pattern-cross)', videoId: 'lTRiuFIWV54', title: '여유로운 거리 (Cafe Vibe)' }
         };
 
         // ==========================================
@@ -642,7 +642,8 @@
             const group = L.layerGroup();
             L.rectangle(bounds, { fillColor: zone.color, fillOpacity: 0.7, color: 'transparent', weight: 0, interactive: false }).addTo(group);
 
-            const patternRect = L.rectangle(bounds, { fillColor: 'transparent', fillOpacity: 1, color: 'white', weight: 1, interactive: false });
+            // 타일 사이의 하얀 격자선을 없애 줌 아웃 시 하나의 덩어리로 보이도록 수정 (color: 'transparent', weight: 0)
+            const patternRect = L.rectangle(bounds, { fillColor: 'transparent', fillOpacity: 1, color: 'transparent', weight: 0, interactive: false });
             if (zone.pattern && zone.pattern !== 'none') {
                 patternRect.on('add', function() { if (this._path) this._path.setAttribute('fill', zone.pattern); });
             }
