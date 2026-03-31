@@ -1161,15 +1161,25 @@
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
         window.onYouTubeIframeAPIReady = function() {
-            const pConfig = { height: '1', width: '1', playerVars: { 'playsinline': 1, 'controls': 0, 'loop': 1 } };
-            ytPlayer1 = new YT.Player('yt-player-1', { ...pConfig, events: { 'onReady': onPlayerReady }});
-            ytPlayer2 = new YT.Player('yt-player-2', { ...pConfig, events: { 'onReady': onPlayerReady }});
+            // loop: 1 옵션 대신 onStateChange 이벤트를 연결합니다.
+            const pConfig = { height: '1', width: '1', playerVars: { 'playsinline': 1, 'controls': 0 } };
+            ytPlayer1 = new YT.Player('yt-player-1', { ...pConfig, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }});
+            ytPlayer2 = new YT.Player('yt-player-2', { ...pConfig, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }});
         };
 
         let playersReadyCount = 0;
         function onPlayerReady() {
             playersReadyCount++;
             if (playersReadyCount === 2) isYtReady = true;
+        }
+
+        // 영상 상태가 변할 때마다 호출되는 함수 (무한 반복의 핵심)
+        function onPlayerStateChange(event) {
+            // 영상 재생이 끝났을 때 (YT.PlayerState.ENDED == 0)
+            if (event.data === YT.PlayerState.ENDED) {
+                event.target.seekTo(0); // 0초로 되감기
+                event.target.playVideo(); // 다시 재생
+            }
         }
 
         function playZoneAudio(zoneId) {
