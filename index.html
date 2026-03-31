@@ -145,8 +145,12 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-semibold text-gray-600 mb-1">YouTube Video ID</label>
-                    <input type="text" id="new-zone-vid" class="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" placeholder="예: jfKfPfyJRdk">
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">YouTube 영상 링크 (또는 ID)</label>
+                    <div class="flex space-x-2">
+                        <input type="text" id="new-zone-vid" class="flex-grow border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50" placeholder="예: https://youtu.be/...">
+                        <button type="button" id="btn-fetch-yt" class="px-3 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold transition whitespace-nowrap">정보 가져오기</button>
+                    </div>
+                    <p id="yt-fetch-msg" class="text-[10px] text-gray-500 mt-1"></p>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 mb-1">음악 제목</label>
@@ -435,6 +439,7 @@
             document.getElementById('new-zone-pattern').value = 'url(#pattern-stripes)';
             document.getElementById('new-zone-vid').value = '';
             document.getElementById('new-zone-title').value = '';
+            document.getElementById('yt-fetch-msg').textContent = '';
 
             modal.classList.remove('hidden');
         };
@@ -451,6 +456,7 @@
             document.getElementById('new-zone-pattern').value = zone.pattern;
             document.getElementById('new-zone-vid').value = zone.videoId;
             document.getElementById('new-zone-title').value = zone.title;
+            document.getElementById('yt-fetch-msg').textContent = '';
 
             modal.classList.remove('hidden');
         }
@@ -483,17 +489,70 @@
             modal.classList.add('hidden');
         };
 
+        // YouTube 링크에서 ID 추출하는 함수
+        function extractYouTubeID(url) {
+            if (url.length === 11 && !url.includes('/')) return url; // 이미 11자리 ID인 경우
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        // YouTube 제목 자동 가져오기 버튼 로직
+        document.getElementById('btn-fetch-yt').onclick = async () => {
+            const inputVal = document.getElementById('new-zone-vid').value.trim();
+            const msgEl = document.getElementById('yt-fetch-msg');
+            
+            if (!inputVal) {
+                msgEl.textContent = "링크를 먼저 입력해주세요.";
+                msgEl.className = "text-[10px] text-red-500 mt-1";
+                return;
+            }
+
+            const videoId = extractYouTubeID(inputVal);
+            
+            if (videoId) {
+                document.getElementById('new-zone-vid').value = videoId; // 깔끔한 ID로 변환
+                msgEl.textContent = "정보를 불러오는 중...";
+                msgEl.className = "text-[10px] text-blue-500 mt-1";
+
+                try {
+                    // YouTube OEmbed API를 이용해 우회 없이 영상 정보 가져오기
+                    const response = await fetch(`https://noembed.com/embed?dataType=json&url=https://www.youtube.com/watch?v=${videoId}`);
+                    const data = await response.json();
+                    
+                    if (data.title) {
+                        document.getElementById('new-zone-title').value = data.title;
+                        msgEl.textContent = "제목을 성공적으로 가져왔습니다!";
+                        msgEl.className = "text-[10px] text-green-500 mt-1";
+                    } else {
+                        msgEl.textContent = "제목을 찾을 수 없습니다. 직접 입력해주세요.";
+                        msgEl.className = "text-[10px] text-red-500 mt-1";
+                    }
+                } catch (error) {
+                    msgEl.textContent = "정보를 불러오는데 실패했습니다.";
+                    msgEl.className = "text-[10px] text-red-500 mt-1";
+                }
+            } else {
+                msgEl.textContent = "유효한 YouTube 링크가 아닙니다.";
+                msgEl.className = "text-[10px] text-red-500 mt-1";
+            }
+        };
+
         document.getElementById('btn-submit-zone').onclick = () => {
             const name = document.getElementById('new-zone-name').value.trim();
             const color = document.getElementById('new-zone-color').value;
             const pattern = document.getElementById('new-zone-pattern').value;
-            const videoId = document.getElementById('new-zone-vid').value.trim();
+            let videoId = document.getElementById('new-zone-vid').value.trim();
             const title = document.getElementById('new-zone-title').value.trim();
 
             if (!name || !videoId) {
                 alert("구역 이름과 YouTube Video ID는 필수입니다.");
                 return;
             }
+
+            // 추가 버튼을 바로 눌렀을 때를 대비한 자동 ID 치환
+            const extractedId = extractYouTubeID(videoId);
+            if (extractedId) videoId = extractedId;
 
             if (editingZoneId) {
                 ZONES[editingZoneId] = { name, color, pattern, videoId, title: title || '알 수 없는 음악' };
