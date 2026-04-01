@@ -257,7 +257,7 @@
     <!-- Bottom Status Bar -->
     <div class="floating-ui bottom-4 sm:bottom-6 left-1/2 transform -translate-x-1/2 bg-gray-900/90 text-white rounded-xl sm:rounded-full px-4 sm:px-6 py-2 sm:py-3 flex flex-col sm:flex-row items-center sm:space-x-6 w-[92%] sm:min-w-[400px] justify-between shadow-xl gap-2 sm:gap-0">
         <div class="flex items-center space-x-3 w-full sm:w-auto">
-            <button id="btn-gps" class="text-gray-400 hover:text-white transition bg-gray-800 sm:bg-transparent p-2 sm:p-0 rounded-full sm:rounded-none" title="내 위치로 이동">
+            <button id="btn-gps" class="text-blue-500 hover:text-white transition bg-gray-800 sm:bg-transparent p-2 sm:p-0 rounded-full sm:rounded-none" title="GPS 실시간 추적 토글">
                 <i class="fa-solid fa-location-crosshairs text-lg sm:text-xl"></i>
             </button>
             <div class="flex flex-col flex-grow">
@@ -327,6 +327,8 @@
         let selectedZone = 'zone1';
         let isPainting = false;
         let isPaintingTouch = false;
+        let isTrackingGPS = true; // GPS 자동 추적 여부
+        let isDataLoaded = false; // 클라우드 데이터 로딩 완료 여부
         
         const gridData = {}; 
         const gridRectangles = {}; 
@@ -354,7 +356,7 @@
         // ==========================================
         let saveTimeout = null;
         function scheduleFirebaseSave() {
-            if (!currentUser || !db) return;
+            if (!currentUser || !db || !isDataLoaded) return; // 데이터 로딩 전 덮어쓰기 방지
             
             const syncStatus = document.getElementById('sync-status');
             syncStatus.textContent = '저장 대기 중...';
@@ -445,6 +447,8 @@
                 console.error("불러오기 에러:", e);
                 syncStatus.textContent = '불러오기 실패';
                 syncStatus.className = 'text-[10px] sm:text-xs text-red-400 font-medium';
+            } finally {
+                isDataLoaded = true; // 로딩 완료 후 저장 제한 해제
             }
         }
 
@@ -481,6 +485,7 @@
             }
         }
 
+        // 구역 라벨 업데이트 (BFS 알고리즘으로 분리된 덩어리마다 라벨 생성)
         function updateZoneLabels() {
             zoneLabelsLayer.clearLayers();
             
@@ -947,7 +952,7 @@
                 fillOpacity: 0.1, interactive: false
             }).addTo(brushPreviewLayer);
 
-            needsMagClone = true; // 브러쉬 프리뷰가 변했으므로 클론 업데이트 요청
+            needsMagClone = true; 
         }
 
         // ==========================================
@@ -971,7 +976,6 @@
         function updateMagnifierRaw(clientX, clientY) {
             magnifierEl.classList.remove('hidden');
             
-            // 화면에 반영된 변경사항을 돋보기에 복제
             if (needsMagClone) {
                 const clone = mapContainer.cloneNode(true);
                 clone.id = '';
@@ -985,11 +989,9 @@
                 needsMagClone = false;
             }
 
-            // 돋보기 박스 위치 업데이트
             magnifierEl.style.left = clientX + 'px';
             magnifierEl.style.top = (clientY - 100) + 'px';
             
-            // 확대 배율 및 줌 오프셋 계산
             const scale = 2;
             const magRadius = magnifierEl.offsetWidth / 2;
             const tx = magRadius - clientX * scale;
@@ -1161,7 +1163,6 @@
         firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
         window.onYouTubeIframeAPIReady = function() {
-            // loop: 1 옵션 대신 onStateChange 이벤트를 연결합니다.
             const pConfig = { height: '1', width: '1', playerVars: { 'playsinline': 1, 'controls': 0 } };
             ytPlayer1 = new YT.Player('yt-player-1', { ...pConfig, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }});
             ytPlayer2 = new YT.Player('yt-player-2', { ...pConfig, events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }});
@@ -1173,12 +1174,10 @@
             if (playersReadyCount === 2) isYtReady = true;
         }
 
-        // 영상 상태가 변할 때마다 호출되는 함수 (무한 반복의 핵심)
         function onPlayerStateChange(event) {
-            // 영상 재생이 끝났을 때 (YT.PlayerState.ENDED == 0)
             if (event.data === YT.PlayerState.ENDED) {
-                event.target.seekTo(0); // 0초로 되감기
-                event.target.playVideo(); // 다시 재생
+                event.target.seekTo(0); 
+                event.target.playVideo(); 
             }
         }
 
@@ -1244,7 +1243,7 @@
 
             if (zoneId === 'default') {
                 statusZone.textContent = `이탈 구역 (기본)`;
-                statusZone.style.color = '#9ca3af'; // text-gray-400
+                statusZone.style.color = '#9ca3af'; 
                 statusSong.textContent = defaultZone.videoId ? defaultZone.title : '재생 중인 음악 없음';
             } else if (zoneId && ZONES[zoneId]) {
                 statusZone.textContent = `현재 구역: ${ZONES[zoneId].name}`;
@@ -1254,11 +1253,22 @@
         }
 
         // ==========================================
-        // 8. 위치 추적 (GPS) 자동 시작 로직
+        // 8. 위치 추적 (GPS) 실시간 토글 로직
         // ==========================================
+        function updateGPSButtonUI() {
+            const btn = document.getElementById('btn-gps');
+            if (isTrackingGPS) {
+                btn.classList.add('text-blue-500');
+                btn.classList.remove('text-gray-400');
+            } else {
+                btn.classList.add('text-gray-400');
+                btn.classList.remove('text-blue-500');
+            }
+        }
+
         function startGPSAuto() {
             if (navigator.geolocation) {
-                document.getElementById('btn-gps').classList.add('text-blue-500');
+                updateGPSButtonUI();
                 
                 watchId = navigator.geolocation.watchPosition((pos) => {
                     const lat = pos.coords.latitude;
@@ -1268,9 +1278,10 @@
                         userLocationMarker = L.circleMarker([lat, lng], {
                             color: 'white', fillColor: '#3b82f6', fillOpacity: 1, radius: 8, weight: 2
                         }).addTo(map);
-                        map.panTo([lat, lng]);
+                        if (isTrackingGPS) map.panTo([lat, lng]);
                     } else {
                         userLocationMarker.setLatLng([lat, lng]);
+                        if (isTrackingGPS) map.panTo([lat, lng]);
                     }
 
                     checkLocationZone(lat, lng);
@@ -1303,12 +1314,24 @@
 
         document.getElementById('btn-gps').onclick = (e) => {
             e.stopPropagation(); 
-            if (userLocationMarker) {
-                map.panTo(userLocationMarker.getLatLng());
-            } else {
+            if (!userLocationMarker) {
                 alert("아직 위치를 찾는 중입니다...");
+                return;
+            }
+            isTrackingGPS = !isTrackingGPS; 
+            updateGPSButtonUI();
+            
+            if (isTrackingGPS) {
+                map.panTo(userLocationMarker.getLatLng());
             }
         };
+
+        map.on('dragstart', () => {
+            if (isTrackingGPS) {
+                isTrackingGPS = false;
+                updateGPSButtonUI();
+            }
+        });
 
         function checkLocationZone(lat, lng) {
             const { latIdx, lngIdx } = getGridCoords(lat, lng);
@@ -1348,17 +1371,19 @@
         };
 
         if (auth) {
-            onAuthStateChanged(auth, (user) => {
+            onAuthStateChanged(auth, async (user) => { 
                 currentUser = user;
                 const loginBtn = document.getElementById('btn-login');
                 const authStatus = document.getElementById('auth-status');
                 
                 if (user) {
+                    isDataLoaded = false; 
                     loginBtn.innerHTML = `<i class="fa-solid fa-sign-out-alt text-gray-600 sm:mr-1"></i> <span class="hidden sm:inline">로그아웃</span>`;
                     authStatus.textContent = `${user.displayName}님`;
                     authStatus.classList.replace('text-gray-400', 'text-green-400');
-                    loadFromFirebase();
+                    await loadFromFirebase(); 
                 } else {
+                    isDataLoaded = true; 
                     loginBtn.innerHTML = `<i class="fa-brands fa-google text-red-500 sm:mr-1"></i> <span class="hidden sm:inline">로그인</span>`;
                     authStatus.textContent = '비로그인 상태';
                     authStatus.classList.replace('text-green-400', 'text-gray-400');
@@ -1431,7 +1456,7 @@
         };
         document.getElementById('btn-load').onclick = () => fileInput.click();
 
-        setMode('paint'); // 초기 시작 시 paint 모드 적용
+        setMode('paint'); 
 
     </script>
 </body>
